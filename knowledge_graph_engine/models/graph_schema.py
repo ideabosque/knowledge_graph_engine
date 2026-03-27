@@ -17,7 +17,7 @@ from silvaengine_dynamodb_base import (
     resolve_list_decorator,
 )
 from silvaengine_utility import method_cache
-from ..types.graph_schema import GraphSchemaType
+from ..types.graph_schema import GraphSchemaListType, GraphSchemaType
 from ..utils.normalization import normalize_to_json
 from ..handlers.config import Config
 
@@ -91,6 +91,7 @@ def get_graph_schemas_for_partition(partition_key: str) -> list:
 
 
 @resolve_list_decorator(
+    list_type_class=GraphSchemaListType,
     type_funct=get_graph_schema_type,
 )
 def resolve_graph_schema_list(info: ResolveInfo, **kwargs: Any) -> Any:

@@ -16,6 +16,16 @@ dependencies = [
     "promise",
 ]
 
+[project.optional-dependencies]
+fastapi = [
+    "fastapi[all]",
+    "uvicorn[standard]",
+    "python-jose[cryptography]",
+    "httpx[http2]",
+    "passlib[bcrypt]",
+    "bcrypt",
+]
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"

@@ -25,7 +25,7 @@ from silvaengine_dynamodb_base import (
 from silvaengine_utility import method_cache
 
 from ..handlers.config import Config
-from ..types.document import DocumentType
+from ..types.document import DocumentListType, DocumentType
 from ..utils.normalization import normalize_to_json
 
 
@@ -107,6 +107,7 @@ def resolve_document(
 
 
 @resolve_list_decorator(
+    list_type_class=DocumentListType,
     type_funct=get_document_type,
 )
 def resolve_document_list(info: ResolveInfo, **kwargs: Any) -> Any:

@@ -1,0 +1,2472 @@
+{
+  "info": {
+    "name": "Knowledge Graph Engine GraphQL API",
+    "description": "Complete collection of GraphQL queries and mutations for the Knowledge Graph Engine. Includes CRUD operations for documents, graph schemas, Neo4j instances, requests, plus knowledge graph extraction, search, and RAG queries.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "knowledge-graph-engine-collection",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "api_url",
+      "value": "https://your-api-domain.com",
+      "type": "string"
+    },
+    {
+      "key": "area",
+      "value": "core",
+      "type": "string"
+    },
+    {
+      "key": "endpoint_id",
+      "value": "your-endpoint-id",
+      "type": "string"
+    },
+    {
+      "key": "funct",
+      "value": "knowledge_graph_engine_graphql",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "your-api-key-here",
+      "type": "string"
+    },
+    {
+      "key": "part_id",
+      "value": "your-part-id",
+      "type": "string"
+    },
+    {
+      "key": "daemon_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_username",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "admin_password",
+      "value": "admin",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth (FastAPI Daemon)",
+      "item": [
+        {
+          "name": "Login (Get Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', jsonData.access_token);",
+                  "    pm.test('Token received', function () {",
+                  "        pm.expect(jsonData.access_token).to.be.a('string');",
+                  "        pm.expect(jsonData.token_type).to.eql('bearer');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{daemon_url}}/auth/token",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "auth",
+                "token"
+              ]
+            },
+            "description": "Login to get a JWT access token. The token is automatically saved to the {{access_token}} collection variable."
+          },
+          "response": []
+        },
+        {
+          "name": "Current User (Me)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{daemon_url}}/me",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Get the current authenticated user's claims."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{daemon_url}}/health",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Public health check endpoint (no auth required)."
+          },
+          "response": []
+        },
+        {
+          "name": "Ping (via Daemon)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ ping }",
+                "variables": ""
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Ping via FastAPI daemon GraphQL endpoint with JWT auth."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Neo4j Instance",
+      "item": [
+        {
+          "name": "Register Neo4j Instance",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateNeo4jInstance($partitionKey: String!, $instanceId: String, $neo4jUri: String!, $neo4jUsername: String, $neo4jPassword: String!, $neo4jDatabase: String, $containerId: String, $status: String, $maxConnectionPoolSize: Int) { insertUpdateNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId, neo4jUri: $neo4jUri, neo4jUsername: $neo4jUsername, neo4jPassword: $neo4jPassword, neo4jDatabase: $neo4jDatabase, containerId: $containerId, status: $status, maxConnectionPoolSize: $maxConnectionPoolSize) { partitionKey instanceId neo4jUri neo4jUsername neo4jDatabase containerId status maxConnectionPoolSize createdAt updatedAt } }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Register or update a Neo4j instance via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Neo4j Instance",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Neo4jInstance($instanceId: String!) { neo4jInstance(instanceId: $instanceId) { partitionKey instanceId endpointId partId neo4jUri neo4jUsername neo4jDatabase containerId status maxConnectionPoolSize createdAt updatedAt } }",
+                "variables": "{\n  \"instanceId\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Get a specific Neo4j instance by instance_id via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "List Neo4j Instances",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Neo4jInstanceList($pageNumber: Int, $limit: Int, $statuses: [String]) { neo4jInstanceList(pageNumber: $pageNumber, limit: $limit, statuses: $statuses) { neo4jInstanceList { partitionKey instanceId neo4jUri neo4jUsername neo4jDatabase status maxConnectionPoolSize createdAt updatedAt } } }",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "List all Neo4j instances via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Neo4j Instance",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteNeo4jInstance($partitionKey: String!, $instanceId: String!) { deleteNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId) }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Delete a Neo4j instance via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Graph Schema",
+      "item": [
+        {
+          "name": "Insert/Update Graph Schema",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateGraphSchema($partitionKey: String!, $schemaName: String!, $schemaType: String, $schemaDefinition: JSONCamelCase, $sourceTextHash: String, $neo4jSchemaString: String, $status: String, $updatedBy: String) { insertUpdateGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName, schemaType: $schemaType, schemaDefinition: $schemaDefinition, sourceTextHash: $sourceTextHash, neo4jSchemaString: $neo4jSchemaString, status: $status, updatedBy: $updatedBy) { partitionKey schemaName schemaType schemaDefinition neo4jSchemaString status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\n      \"Product\",\n      \"Category\",\n      \"Tag\",\n      \"Vendor\"\n    ],\n    \"relationship_types\": [\n      \"BELONGS_TO\",\n      \"HAS_TAG\",\n      \"SOLD_BY\"\n    ]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Create or update a graph schema via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Graph Schema",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GraphSchema($schemaName: String) { graphSchema(schemaName: $schemaName) { partitionKey schemaName endpointId partId schemaType schemaDefinition sourceTextHash neo4jSchemaString status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"schemaName\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Get a specific graph schema by name via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "List Graph Schemas",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GraphSchemaList($pageNumber: Int, $limit: Int, $schemaType: String, $statuses: [String]) { graphSchemaList(pageNumber: $pageNumber, limit: $limit, schemaType: $schemaType, statuses: $statuses) { graphSchemaList { partitionKey schemaName schemaType neo4jSchemaString status createdAt updatedAt } } }",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "List all graph schemas via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Graph Schema",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteGraphSchema($partitionKey: String!, $schemaName: String!) { deleteGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName) }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Delete a graph schema via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Document",
+      "item": [
+        {
+          "name": "Insert/Update Document",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateDocument($partitionKey: String!, $documentUuid: String, $documentSource: String, $documentExternalId: String, $chunkIndex: Int, $documentTitle: String, $content: String, $status: String, $updatedBy: String!) { insertUpdateDocument(partitionKey: $partitionKey, documentUuid: $documentUuid, documentSource: $documentSource, documentExternalId: $documentExternalId, chunkIndex: $chunkIndex, documentTitle: $documentTitle, content: $content, status: $status, updatedBy: $updatedBy) { partitionKey documentUuid documentSource documentExternalId chunkIndex documentTitle content status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Create or update a document via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Document($documentUuid: String) { document(documentUuid: $documentUuid) { partitionKey documentUuid endpointId partId documentSource documentExternalId chunkIndex documentTitle content status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"documentUuid\": \"your-document-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Get a specific document by UUID via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query DocumentList($pageNumber: Int, $limit: Int, $documentSource: String, $documentExternalId: String, $statuses: [String]) { documentList(pageNumber: $pageNumber, limit: $limit, documentSource: $documentSource, documentExternalId: $documentExternalId, statuses: $statuses) { documentList { partitionKey documentUuid documentSource documentExternalId documentTitle status createdAt updatedAt } } }",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "List documents via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteDocument($partitionKey: String!, $documentUuid: String!) { deleteDocument(partitionKey: $partitionKey, documentUuid: $documentUuid) }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentUuid\": \"your-document-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Delete a document via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Extract",
+      "item": [
+        {
+          "name": "Extract Knowledge Graph",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation ExecuteExtract($partitionKey: String!, $text: String!, $graphSchema: JSONCamelCase, $schemaName: String, $documentSource: String, $documentExternalId: String) { executeExtract(partitionKey: $partitionKey, text: $text, graphSchema: $graphSchema, schemaName: $schemaName, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"schemaName\": \"default\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Extract entities and relationships from text via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Extract with Custom Schema",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation ExecuteExtract($partitionKey: String!, $text: String!, $graphSchema: JSONCamelCase, $schemaName: String, $documentSource: String, $documentExternalId: String) { executeExtract(partitionKey: $partitionKey, text: $text, graphSchema: $graphSchema, schemaName: $schemaName, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\n        \"label\": \"Product\",\n        \"properties\": [\n          \"name\",\n          \"sku\",\n          \"price\"\n        ]\n      },\n      {\n        \"label\": \"Vendor\",\n        \"properties\": [\n          \"name\"\n        ]\n      },\n      {\n        \"label\": \"Category\",\n        \"properties\": [\n          \"name\"\n        ]\n      }\n    ],\n    \"relationship_types\": [\n      {\n        \"type\": \"SOLD_BY\",\n        \"source\": \"Product\",\n        \"target\": \"Vendor\"\n      },\n      {\n        \"type\": \"BELONGS_TO\",\n        \"source\": \"Product\",\n        \"target\": \"Category\"\n      }\n    ]\n  },\n  \"schemaName\": \"product_catalog\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Extract with a custom graph schema via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Search",
+      "item": [
+        {
+          "name": "Vector Search",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search($queryText: String!, $searchMode: String, $indexName: String, $topK: Int, $page: Int, $limit: Int) { search(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, topK: $topK, page: $page, limit: $limit) { results query total page limit } }",
+                "variables": "{\n  \"queryText\": \"snowboard products for winter sports\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5,\n  \"page\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Vector search via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Text2Cypher Search",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search($queryText: String!, $searchMode: String, $schemaName: String, $topK: Int) { search(queryText: $queryText, searchMode: $searchMode, schemaName: $schemaName, topK: $topK) { results query total page limit } }",
+                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"schemaName\": \"default\",\n  \"topK\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Text2Cypher search via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Hybrid Search",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search($queryText: String!, $searchMode: String, $indexName: String, $topK: Int, $page: Int, $limit: Int) { search(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, topK: $topK, page: $page, limit: $limit) { results query total page limit } }",
+                "variables": "{\n  \"queryText\": \"safety glasses protective equipment\",\n  \"searchMode\": \"hybrid\",\n  \"indexName\": \"vector\",\n  \"topK\": 5,\n  \"page\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Hybrid search via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "Vector Cypher Search",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search($queryText: String!, $searchMode: String, $indexName: String, $retrievalQuery: String, $topK: Int, $page: Int, $limit: Int) { search(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, retrievalQuery: $retrievalQuery, topK: $topK, page: $page, limit: $limit) { results query total page limit } }",
+                "variables": "{\n  \"queryText\": \"snowboard products\",\n  \"searchMode\": \"vector_cypher\",\n  \"indexName\": \"vector\",\n  \"retrievalQuery\": \"RETURN node, score\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Vector Cypher search via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - RAG",
+      "item": [
+        {
+          "name": "RAG Query",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG($queryText: String!, $searchMode: String, $indexName: String, $topK: Int) { rag(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, topK: $topK) { answer sources context } }",
+                "variables": "{\n  \"queryText\": \"What snowboard products are available and what are their prices?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "RAG query via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "RAG with Custom Prompt",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG($queryText: String!, $searchMode: String, $indexName: String, $topK: Int, $prompt: String) { rag(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, topK: $topK, prompt: $prompt) { answer sources context } }",
+                "variables": "{\n  \"queryText\": \"What work gloves are available?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 3,\n  \"prompt\": \"Based on the following context from a product catalog, answer the question concisely.\\n\\nContext:\\n{context}\\n\\nExamples:\\n{examples}\\n\\nQuestion: {query_text}\\nAnswer:\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "RAG with custom prompt via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "RAG with Schema Context",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG($queryText: String!, $searchMode: String, $schemaName: String, $indexName: String, $topK: Int) { rag(queryText: $queryText, searchMode: $searchMode, schemaName: $schemaName, indexName: $indexName, topK: $topK) { answer sources context } }",
+                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"schemaName\": \"default\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "RAG with schema context via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "FastAPI Daemon - Request",
+      "item": [
+        {
+          "name": "Get Request",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Request($requestUuid: String!) { request(requestUuid: $requestUuid) { partitionKey requestUuid endpointId partId userQuery cypherQuery searchMode results updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"requestUuid\": \"your-request-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "Get a specific request record via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "List Requests",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RequestList($pageNumber: Int, $limit: Int, $searchMode: String) { requestList(pageNumber: $pageNumber, limit: $limit, searchMode: $searchMode) { requestList { partitionKey requestUuid userQuery cypherQuery searchMode results updatedBy createdAt updatedAt } } }",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "List request records via FastAPI daemon."
+          },
+          "response": []
+        },
+        {
+          "name": "List Requests by Search Mode",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RequestList($searchMode: String) { requestList(searchMode: $searchMode) { requestList { partitionKey requestUuid userQuery searchMode results createdAt } } }",
+                "variables": "{\n  \"searchMode\": \"vector\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "host": [
+                "{{daemon_url}}"
+              ],
+              "path": [
+                "{{endpoint_id}}",
+                "knowledge_graph_engine_graphql"
+              ]
+            },
+            "description": "List requests filtered by search mode via FastAPI daemon."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Ping",
+      "item": [
+        {
+          "name": "Ping",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query {\n  ping\n}",
+                "variables": ""
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Simple ping query to test API connectivity"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Neo4j Instance",
+      "item": [
+        {
+          "name": "Register Neo4j Instance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateNeo4jInstance(\n  $partitionKey: String!\n  $instanceId: String\n  $neo4jUri: String!\n  $neo4jUsername: String\n  $neo4jPassword: String!\n  $neo4jDatabase: String\n  $containerId: String\n  $status: String\n  $maxConnectionPoolSize: Int\n) {\n  insertUpdateNeo4jInstance(\n    partitionKey: $partitionKey\n    instanceId: $instanceId\n    neo4jUri: $neo4jUri\n    neo4jUsername: $neo4jUsername\n    neo4jPassword: $neo4jPassword\n    neo4jDatabase: $neo4jDatabase\n    containerId: $containerId\n    status: $status\n    maxConnectionPoolSize: $maxConnectionPoolSize\n  ) {\n    partitionKey\n    instanceId\n    neo4jUri\n    neo4jUsername\n    neo4jDatabase\n    containerId\n    status\n    maxConnectionPoolSize\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Register or update a Neo4j instance for a tenant partition. The instance_id defaults to 'default' if not specified."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Neo4j Instance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Neo4jInstance($instanceId: String!) {\n  neo4jInstance(instanceId: $instanceId) {\n    partitionKey\n    instanceId\n    endpointId\n    partId\n    neo4jUri\n    neo4jUsername\n    neo4jDatabase\n    containerId\n    status\n    maxConnectionPoolSize\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"instanceId\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific Neo4j instance by instance_id"
+          },
+          "response": []
+        },
+        {
+          "name": "List Neo4j Instances",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Neo4jInstanceList($pageNumber: Int, $limit: Int, $statuses: [String]) {\n  neo4jInstanceList(pageNumber: $pageNumber, limit: $limit, statuses: $statuses) {\n    neo4jInstanceList {\n      partitionKey\n      instanceId\n      neo4jUri\n      neo4jUsername\n      neo4jDatabase\n      status\n      maxConnectionPoolSize\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List all Neo4j instances for the current partition"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Neo4j Instance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteNeo4jInstance($partitionKey: String!, $instanceId: String!) {\n  deleteNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId)\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete a Neo4j instance registration"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Graph Schema",
+      "item": [
+        {
+          "name": "Insert/Update Graph Schema",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateGraphSchema(\n  $partitionKey: String!\n  $schemaName: String!\n  $schemaType: String\n  $schemaDefinition: JSONCamelCase\n  $sourceTextHash: String\n  $neo4jSchemaString: String\n  $status: String\n  $updatedBy: String\n) {\n  insertUpdateGraphSchema(\n    partitionKey: $partitionKey\n    schemaName: $schemaName\n    schemaType: $schemaType\n    schemaDefinition: $schemaDefinition\n    sourceTextHash: $sourceTextHash\n    neo4jSchemaString: $neo4jSchemaString\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    schemaName\n    schemaType\n    schemaDefinition\n    neo4jSchemaString\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\"Product\", \"Category\", \"Tag\", \"Vendor\"],\n    \"relationship_types\": [\"BELONGS_TO\", \"HAS_TAG\", \"SOLD_BY\"]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update a graph schema. The schema_definition can include node_types, relationship_types, and patterns for entity extraction."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Graph Schema",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GraphSchema($schemaName: String) {\n  graphSchema(schemaName: $schemaName) {\n    partitionKey\n    schemaName\n    endpointId\n    partId\n    schemaType\n    schemaDefinition\n    sourceTextHash\n    neo4jSchemaString\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"schemaName\": \"default\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific graph schema by name"
+          },
+          "response": []
+        },
+        {
+          "name": "List Graph Schemas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GraphSchemaList(\n  $pageNumber: Int\n  $limit: Int\n  $schemaType: String\n  $statuses: [String]\n) {\n  graphSchemaList(\n    pageNumber: $pageNumber\n    limit: $limit\n    schemaType: $schemaType\n    statuses: $statuses\n  ) {\n    graphSchemaList {\n      partitionKey\n      schemaName\n      schemaType\n      neo4jSchemaString\n      status\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List all graph schemas for the current partition"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Graph Schema",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteGraphSchema($partitionKey: String!, $schemaName: String!) {\n  deleteGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName)\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete a graph schema"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Document",
+      "item": [
+        {
+          "name": "Insert/Update Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateDocument(\n  $partitionKey: String!\n  $documentUuid: String\n  $documentSource: String\n  $documentExternalId: String\n  $chunkIndex: Int\n  $documentTitle: String\n  $content: String\n  $status: String\n  $updatedBy: String!\n) {\n  insertUpdateDocument(\n    partitionKey: $partitionKey\n    documentUuid: $documentUuid\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n    chunkIndex: $chunkIndex\n    documentTitle: $documentTitle\n    content: $content\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    documentUuid\n    documentSource\n    documentExternalId\n    chunkIndex\n    documentTitle\n    content\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update a document record"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Document($documentUuid: String) {\n  document(documentUuid: $documentUuid) {\n    partitionKey\n    documentUuid\n    endpointId\n    partId\n    documentSource\n    documentExternalId\n    chunkIndex\n    documentTitle\n    content\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"documentUuid\": \"your-document-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific document by UUID"
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query DocumentList(\n  $pageNumber: Int\n  $limit: Int\n  $documentSource: String\n  $documentExternalId: String\n  $statuses: [String]\n  $updatedAtGt: DateTime\n  $updatedAtLt: DateTime\n) {\n  documentList(\n    pageNumber: $pageNumber\n    limit: $limit\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n    statuses: $statuses\n    updatedAtGt: $updatedAtGt\n    updatedAtLt: $updatedAtLt\n  ) {\n    documentList {\n      partitionKey\n      documentUuid\n      documentSource\n      documentExternalId\n      documentTitle\n      status\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List documents with optional filters for source, external ID, status, and date range"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteDocument($partitionKey: String!, $documentUuid: String!) {\n  deleteDocument(partitionKey: $partitionKey, documentUuid: $documentUuid)\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentUuid\": \"your-document-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete a document by partition key and UUID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Extract",
+      "item": [
+        {
+          "name": "Extract Knowledge Graph",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation ExecuteExtract(\n  $partitionKey: String!\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $schemaName: String\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    partitionKey: $partitionKey\n    text: $text\n    graphSchema: $graphSchema\n    schemaName: $schemaName\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"schemaName\": \"default\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Extract entities and relationships from text into the knowledge graph. Optionally specify a schema_name to use a saved schema, or pass graph_schema as JSON to define entity/relationship types."
+          },
+          "response": []
+        },
+        {
+          "name": "Extract with Custom Schema",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation ExecuteExtract(\n  $partitionKey: String!\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $schemaName: String\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    partitionKey: $partitionKey\n    text: $text\n    graphSchema: $graphSchema\n    schemaName: $schemaName\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
+                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\"label\": \"Product\", \"properties\": [\"name\", \"sku\", \"price\"]},\n      {\"label\": \"Vendor\", \"properties\": [\"name\"]},\n      {\"label\": \"Category\", \"properties\": [\"name\"]}\n    ],\n    \"relationship_types\": [\n      {\"type\": \"SOLD_BY\", \"source\": \"Product\", \"target\": \"Vendor\"},\n      {\"type\": \"BELONGS_TO\", \"source\": \"Product\", \"target\": \"Category\"}\n    ]\n  },\n  \"schemaName\": \"product_catalog\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Extract with a custom graph schema defining entity types and relationship types. The schema will be saved under the specified schema_name for reuse."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Vector Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $topK: Int\n  $page: Int\n  $limit: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    topK: $topK\n    page: $page\n    limit: $limit\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
+                "variables": "{\n  \"queryText\": \"snowboard products for winter sports\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5,\n  \"page\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Semantic similarity search using vector embeddings. Results include content and metadata with similarity scores."
+          },
+          "response": []
+        },
+        {
+          "name": "Text2Cypher Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $schemaName: String\n  $topK: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    schemaName: $schemaName\n    topK: $topK\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"schemaName\": \"default\",\n  \"topK\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "LLM-generated Cypher query search. The LLM uses the graph schema to generate a Cypher query from natural language. Results are raw Neo4j records."
+          },
+          "response": []
+        },
+        {
+          "name": "Hybrid Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $topK: Int\n  $page: Int\n  $limit: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    topK: $topK\n    page: $page\n    limit: $limit\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
+                "variables": "{\n  \"queryText\": \"safety glasses protective equipment\",\n  \"searchMode\": \"hybrid\",\n  \"indexName\": \"vector\",\n  \"topK\": 5,\n  \"page\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Combined vector + fulltext search. Uses both vector similarity and fulltext index for broader matching."
+          },
+          "response": []
+        },
+        {
+          "name": "Vector Cypher Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $retrievalQuery: String\n  $topK: Int\n  $page: Int\n  $limit: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    retrievalQuery: $retrievalQuery\n    topK: $topK\n    page: $page\n    limit: $limit\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
+                "variables": "{\n  \"queryText\": \"snowboard products\",\n  \"searchMode\": \"vector_cypher\",\n  \"indexName\": \"vector\",\n  \"retrievalQuery\": \"RETURN node, score\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Vector search with custom Cypher traversal. First finds similar nodes via vector search, then applies a custom Cypher retrieval query for graph traversal."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "RAG",
+      "item": [
+        {
+          "name": "RAG Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $topK: Int\n) {\n  rag(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    topK: $topK\n  ) {\n    answer\n    sources\n    context\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What snowboard products are available and what are their prices?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Retrieval-Augmented Generation query. Retrieves relevant context from the knowledge graph and generates a natural language answer using the LLM."
+          },
+          "response": []
+        },
+        {
+          "name": "RAG with Custom Prompt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $topK: Int\n  $prompt: String\n) {\n  rag(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    topK: $topK\n    prompt: $prompt\n  ) {\n    answer\n    sources\n    context\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What work gloves are available?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 3,\n  \"prompt\": \"Based on the following context from a product catalog, answer the question concisely.\\n\\nContext:\\n{context}\\n\\nExamples:\\n{examples}\\n\\nQuestion: {query_text}\\nAnswer:\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "RAG query with a custom prompt template. The prompt must include {context}, {query_text}, and {examples} placeholders."
+          },
+          "response": []
+        },
+        {
+          "name": "RAG with Schema Context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RAG(\n  $queryText: String!\n  $searchMode: String\n  $schemaName: String\n  $indexName: String\n  $topK: Int\n) {\n  rag(\n    queryText: $queryText\n    searchMode: $searchMode\n    schemaName: $schemaName\n    indexName: $indexName\n    topK: $topK\n  ) {\n    answer\n    sources\n    context\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"schemaName\": \"default\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "RAG query with schema context. When schema_name is provided, the graph schema string is prepended to the query for richer context."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Request",
+      "item": [
+        {
+          "name": "Get Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Request($requestUuid: String!) {\n  request(requestUuid: $requestUuid) {\n    partitionKey\n    requestUuid\n    endpointId\n    partId\n    userQuery\n    cypherQuery\n    searchMode\n    results\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"requestUuid\": \"your-request-uuid\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific search/RAG request record by UUID"
+          },
+          "response": []
+        },
+        {
+          "name": "List Requests",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RequestList(\n  $pageNumber: Int\n  $limit: Int\n  $searchMode: String\n) {\n  requestList(\n    pageNumber: $pageNumber\n    limit: $limit\n    searchMode: $searchMode\n  ) {\n    requestList {\n      partitionKey\n      requestUuid\n      userQuery\n      cypherQuery\n      searchMode\n      results\n      updatedBy\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 1,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List search/RAG request records. Optionally filter by search_mode (vector, text2cypher, rag:vector, etc.)"
+          },
+          "response": []
+        },
+        {
+          "name": "List Requests by Search Mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Part-Id",
+                "value": "{{part_id}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query RequestList($searchMode: String) {\n  requestList(searchMode: $searchMode) {\n    requestList {\n      partitionKey\n      requestUuid\n      userQuery\n      searchMode\n      results\n      createdAt\n    }\n  }\n}",
+                "variables": "{\n  \"searchMode\": \"vector\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List request records filtered by search mode. Valid modes: vector, text2cypher, vector_cypher, hybrid, rag:vector, rag:text2cypher"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

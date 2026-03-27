@@ -12,6 +12,24 @@ from typing import Any, Dict, Optional
 import boto3
 
 
+class LocalUser:
+    """Simple local user for JWT auth."""
+
+    def __init__(self, username: str, hashed_password: str, roles: list = None):
+        self.username = username
+        self.hashed_password = hashed_password
+        self.roles = roles or []
+
+    def verify(self, password: str) -> bool:
+        try:
+            from passlib.context import CryptContext
+
+            ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            return ctx.verify(password, self.hashed_password)
+        except ImportError:
+            return password == self.hashed_password
+
+
 class Config:
     """
     Centralized Configuration Class
@@ -23,6 +41,29 @@ class Config:
     _lock: threading.RLock = threading.RLock()
     _logger: Optional[logging.Logger] = None
     _setting: Dict[str, Any] = {}
+    _USERS: Dict[str, LocalUser] = {}
+
+    # KnowledgeGraphEngine instance (set by fastapi entry point)
+    kge: Any = None
+
+    # Auth settings
+    auth_provider: str = "local"  # "local" or "cognito"
+    jwt_secret_key: str = "CHANGEME"
+    jwt_algorithm: str = "HS256"
+    access_token_exp: int = 15  # minutes
+    admin_username: str = ""
+    admin_password: str = ""
+    admin_static_token: str = ""
+
+    # Cognito settings
+    cognito_user_pool_id: str = ""
+    cognito_app_client_id: str = ""
+    cognito_app_secret: str = ""
+    jwks_endpoint: str = ""
+    jwks_cache_ttl: int = 3600
+    issuer: str = ""
+    aws_cognito_idp: Any = None
+
     # Cache Configuration
     CACHE_TTL = 1800
     CACHE_ENABLED: bool = True
@@ -85,6 +126,7 @@ class Config:
                     cls._logger = logger
                     cls._setting = setting
                     cls._initialize_aws_services(setting)
+                    cls._initialize_auth(setting)
 
                     if setting.get("initialize_tables"):
                         cls._initialize_tables(logger)
@@ -111,6 +153,66 @@ class Config:
             aws_credentials = {}
 
         cls.aws_lambda = boto3.client("lambda", **aws_credentials)
+
+    @classmethod
+    def _initialize_auth(cls, setting: Dict[str, Any]) -> None:
+        cls.auth_provider = setting.get("auth_provider", "local")
+        cls.jwt_secret_key = setting.get("jwt_secret_key", "CHANGEME")
+        cls.jwt_algorithm = setting.get("jwt_algorithm", "HS256")
+        cls.access_token_exp = int(setting.get("access_token_exp", 15))
+        cls.admin_username = setting.get("admin_username", "")
+        cls.admin_password = setting.get("admin_password", "")
+        cls.admin_static_token = setting.get("admin_static_token", "")
+
+        if cls.auth_provider == "cognito":
+            cls.cognito_user_pool_id = setting.get("cognito_user_pool_id", "")
+            cls.cognito_app_client_id = setting.get("cognito_app_client_id", "")
+            cls.cognito_app_secret = setting.get("cognito_app_secret", "")
+            region = setting.get("region_name", "us-east-1")
+            cls.issuer = (
+                f"https://cognito-idp.{region}.amazonaws.com/{cls.cognito_user_pool_id}"
+            )
+            cls.jwks_endpoint = setting.get(
+                "cognito_jwks_url",
+                f"{cls.issuer}/.well-known/jwks.json",
+            )
+            cls.jwks_cache_ttl = int(setting.get("jwks_cache_ttl", 3600))
+
+            if all(
+                setting.get(k)
+                for k in ["region_name", "aws_access_key_id", "aws_secret_access_key"]
+            ):
+                cls.aws_cognito_idp = boto3.client(
+                    "cognito-idp",
+                    region_name=setting["region_name"],
+                    aws_access_key_id=setting["aws_access_key_id"],
+                    aws_secret_access_key=setting["aws_secret_access_key"],
+                )
+
+        # Load local users file if configured
+        user_file = setting.get("local_user_file")
+        if user_file:
+            cls._load_users(user_file)
+
+    @classmethod
+    def _load_users(cls, filepath: str) -> None:
+        import json
+        import os
+
+        if not os.path.exists(filepath):
+            return
+        try:
+            with open(filepath) as f:
+                users_data = json.load(f)
+            for u in users_data:
+                cls._USERS[u["username"]] = LocalUser(
+                    username=u["username"],
+                    hashed_password=u.get("hashed_password", ""),
+                    roles=u.get("roles", []),
+                )
+        except Exception as e:
+            if cls._logger:
+                cls._logger.warning(f"Failed to load users from {filepath}: {e}")
 
     @classmethod
     def _initialize_tables(cls, logger: logging.Logger) -> None:

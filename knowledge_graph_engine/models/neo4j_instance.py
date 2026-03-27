@@ -14,7 +14,7 @@ from pynamodb.attributes import (
     UnicodeAttribute,
     UTCDateTimeAttribute,
 )
-from ..types.neo4j_instance import Neo4jInstanceType
+from ..types.neo4j_instance import Neo4jInstanceListType, Neo4jInstanceType
 from ..utils.normalization import normalize_to_json
 from silvaengine_dynamodb_base import (
     BaseModel,
@@ -76,20 +76,25 @@ def get_neo4j_instance_type(
 
 
 @resolve_list_decorator(
+    list_type_class=Neo4jInstanceListType,
     type_funct=get_neo4j_instance_type,
 )
 def resolve_neo4j_instance_list(info: ResolveInfo, **kwargs: Any) -> Any:
     partition_key = info.context.get("partition_key")
     statuses = kwargs.get("statuses")
 
-    inquiry_funct = Neo4jInstanceModel.scan
-    count_funct = Neo4jInstanceModel.count
-
-    args = [partition_key] if partition_key else []
     the_filters = None
-
     if statuses:
         the_filters = Neo4jInstanceModel.status.is_in(*statuses)
+
+    if partition_key:
+        inquiry_funct = Neo4jInstanceModel.query
+        count_funct = Neo4jInstanceModel.count
+        args = [partition_key]
+    else:
+        inquiry_funct = Neo4jInstanceModel.scan
+        count_funct = Neo4jInstanceModel.count
+        args = []
 
     if the_filters:
         args.append(the_filters)
