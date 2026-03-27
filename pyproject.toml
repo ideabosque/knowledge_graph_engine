@@ -1,0 +1,31 @@
+[project]
+name = "Knowledge-Graph-Engine"
+version = "0.0.1"
+requires-python = ">=3.8"
+dependencies = [
+    "SilvaEngine-Utility",
+    "SilvaEngine-DynamoDB-Base",
+    "graphene",
+    "neo4j",
+    "neo4j-graphrag",
+    "openai",
+    "numpy",
+    "openpyxl",
+    "python-dotenv",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.pyright]
+typeCheckingMode = "basic"
+reportCallIssue = "none"
+reportArgumentType = "none"
+reportIndexIssue = "none"
+reportAttributeAccessIssue = "none"
+reportOptionalMemberAccess = "none"
+reportGeneralTypeIssues = "none"
+reportOptionalSubscript = "none"
+reportAssignmentType = "none"
+reportOptionalCall = "none"
