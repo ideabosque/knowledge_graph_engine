@@ -3,8 +3,8 @@ name = "Knowledge-Graph-Engine"
 version = "0.0.1"
 requires-python = ">=3.8"
 dependencies = [
-    "SilvaEngine-Utility",
-    "SilvaEngine-DynamoDB-Base",
+    "silvaengine-utility",
+    "silvaengine-dynamodb-base",
     "graphene",
     "neo4j",
     "neo4j-graphrag",
@@ -12,11 +12,13 @@ dependencies = [
     "numpy",
     "openpyxl",
     "python-dotenv",
+    "pendulum",
+    "promise",
 ]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [tool.pyright]
 typeCheckingMode = "basic"
