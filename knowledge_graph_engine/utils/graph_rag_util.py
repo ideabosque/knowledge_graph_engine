@@ -4,7 +4,12 @@ from __future__ import print_function
 __author__ = "silvaengine"
 
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional, Union
+
+import nest_asyncio
+
+nest_asyncio.apply()
 
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 from neo4j_graphrag.experimental.components.schema import (
@@ -31,6 +36,47 @@ try:
     from neo4j_graphrag.embeddings import OllamaEmbeddings
 except ImportError:  # pragma: no cover
     OllamaEmbeddings = None
+
+logger = logging.getLogger(__name__)
+
+
+def _suppress_event_loop_closed(loop, context):
+    """Suppress 'Event loop is closed' errors from httpx AsyncClient cleanup."""
+    exception = context.get("exception")
+    if isinstance(exception, RuntimeError) and "Event loop is closed" in str(exception):
+        return  # Silently ignore httpx cleanup noise
+    loop.default_exception_handler(context)
+
+
+def _run_async(coro):
+    """Run an async coroutine safely from sync context, even inside a running event loop."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.set_exception_handler(_suppress_event_loop_closed)
+    return loop.run_until_complete(coro)
+
+
+class _SuppressEventLoopClosedFilter(logging.Filter):
+    """Filter out 'Event loop is closed' errors from asyncio logger.
+    These are harmless GC cleanup noise from httpx.AsyncClient.__del__.
+    """
+    def filter(self, record):
+        if record.exc_info and record.exc_info[1]:
+            if "Event loop is closed" in str(record.exc_info[1]):
+                return False
+        if "Event loop is closed" in record.getMessage():
+            return False
+        return True
+
+
+# Apply the filter to the asyncio logger to suppress httpx cleanup noise
+logging.getLogger("asyncio").addFilter(_SuppressEventLoopClosedFilter())
 
 try:
     from neo4j_graphrag.llm import (
@@ -156,23 +202,12 @@ class GraphRAGUtil:
             perform_entity_resolution=perform_entity_resolution,
         )
 
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(pipeline.run_async(text=text))
+        return _run_async(pipeline.run_async(text=text))
 
     def build_schema_from_text(self, text: str) -> GraphSchema:
         """Auto-generate GraphSchema from text using SchemaFromTextExtractor."""
         extractor = SchemaFromTextExtractor(llm=self.llm)
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(extractor.run(text=text))
+        return _run_async(extractor.run(text=text))
 
     def vector_search(
         self,

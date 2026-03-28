@@ -4,11 +4,36 @@ from __future__ import print_function
 __author__ = "silvaengine"
 
 import asyncio
+import logging
 from typing import Dict, List, Optional, Union
 
 import nest_asyncio
 
 nest_asyncio.apply()
+
+logger = logging.getLogger(__name__)
+
+
+def _suppress_event_loop_closed(loop, context):
+    """Suppress 'Event loop is closed' errors from httpx AsyncClient cleanup."""
+    exception = context.get("exception")
+    if isinstance(exception, RuntimeError) and "Event loop is closed" in str(exception):
+        return  # Silently ignore httpx cleanup noise
+    loop.default_exception_handler(context)
+
+
+def _run_async(coro):
+    """Run an async coroutine safely from sync context, even inside a running event loop."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.set_exception_handler(_suppress_event_loop_closed)
+    return loop.run_until_complete(coro)
 
 from neo4j_graphrag.experimental.components.schema import (
     GraphSchema,
@@ -86,7 +111,7 @@ class SchemaResolver:
     def _auto_generate_and_save(self, text: str) -> GraphSchema:
         """Use SchemaFromTextExtractor to auto-generate GraphSchema from text, save as active."""
         extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
-        schema: GraphSchema = asyncio.get_event_loop().run_until_complete(extractor.run(text=text))
+        schema: GraphSchema = _run_async(extractor.run(text=text))
         self._save_as_active(schema, "auto")
         return schema
 
@@ -96,7 +121,7 @@ class SchemaResolver:
             driver=self.graph_rag_util.driver,
             neo4j_database=self.graph_rag_util.neo4j_database,
         )
-        return asyncio.get_event_loop().run_until_complete(extractor.run())
+        return _run_async(extractor.run())
 
     def _dict_to_graph_schema(self, schema_dict: dict) -> GraphSchema:
         """
@@ -155,7 +180,7 @@ class SchemaResolver:
     def _hybrid_schema(self, text: str, base_schema: GraphSchema) -> GraphSchema:
         """Start from base schema, LLM discovers additional types from text."""
         extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
-        auto_schema: GraphSchema = asyncio.get_event_loop().run_until_complete(extractor.run(text=text))
+        auto_schema: GraphSchema = _run_async(extractor.run(text=text))
         return self._merge_schemas(base_schema, auto_schema)
 
     def _merge_schemas(self, base: GraphSchema, auto: GraphSchema) -> GraphSchema:
