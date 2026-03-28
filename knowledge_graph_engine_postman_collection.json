@@ -270,8 +270,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateNeo4jInstance($partitionKey: String!, $instanceId: String, $neo4jUri: String!, $neo4jUsername: String, $neo4jPassword: String!, $neo4jDatabase: String, $containerId: String, $status: String, $maxConnectionPoolSize: Int) { insertUpdateNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId, neo4jUri: $neo4jUri, neo4jUsername: $neo4jUsername, neo4jPassword: $neo4jPassword, neo4jDatabase: $neo4jDatabase, containerId: $containerId, status: $status, maxConnectionPoolSize: $maxConnectionPoolSize) { partitionKey instanceId neo4jUri neo4jUsername neo4jDatabase containerId status maxConnectionPoolSize createdAt updatedAt } }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
+                "query": "mutation InsertUpdateNeo4jInstance($instanceId: String, $neo4jUri: String!, $neo4jUsername: String, $neo4jPassword: String!, $neo4jDatabase: String, $containerId: String, $status: String, $maxConnectionPoolSize: Int) { insertUpdateNeo4jInstance(instanceId: $instanceId, neo4jUri: $neo4jUri, neo4jUsername: $neo4jUsername, neo4jPassword: $neo4jPassword, neo4jDatabase: $neo4jDatabase, containerId: $containerId, status: $status, maxConnectionPoolSize: $maxConnectionPoolSize) { partitionKey instanceId neo4jUri neo4jUsername neo4jDatabase containerId status maxConnectionPoolSize createdAt updatedAt } }",
+                "variables": "{\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
               }
             },
             "url": {
@@ -408,8 +408,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteNeo4jInstance($partitionKey: String!, $instanceId: String!) { deleteNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId) }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\"\n}"
+                "query": "mutation DeleteNeo4jInstance($instanceId: String!) { deleteNeo4jInstance(instanceId: $instanceId) }",
+                "variables": "{\n  \"instanceId\": \"default\"\n}"
               }
             },
             "url": {
@@ -459,8 +459,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateGraphSchema($partitionKey: String!, $schemaName: String!, $schemaType: String, $schemaDefinition: JSONCamelCase, $sourceTextHash: String, $neo4jSchemaString: String, $status: String, $updatedBy: String) { insertUpdateGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName, schemaType: $schemaType, schemaDefinition: $schemaDefinition, sourceTextHash: $sourceTextHash, neo4jSchemaString: $neo4jSchemaString, status: $status, updatedBy: $updatedBy) { partitionKey schemaName schemaType schemaDefinition neo4jSchemaString status updatedBy createdAt updatedAt } }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\n      \"Product\",\n      \"Category\",\n      \"Tag\",\n      \"Vendor\"\n    ],\n    \"relationship_types\": [\n      \"BELONGS_TO\",\n      \"HAS_TAG\",\n      \"SOLD_BY\"\n    ]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+                "query": "mutation InsertUpdateGraphSchema($schemaName: String!, $schemaType: String, $schemaDefinition: JSONCamelCase, $sourceTextHash: String, $neo4jSchemaString: String, $status: String, $updatedBy: String) { insertUpdateGraphSchema(schemaName: $schemaName, schemaType: $schemaType, schemaDefinition: $schemaDefinition, sourceTextHash: $sourceTextHash, neo4jSchemaString: $neo4jSchemaString, status: $status, updatedBy: $updatedBy) { partitionKey schemaName schemaType schemaDefinition neo4jSchemaString status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\n      \"Product\",\n      \"Category\",\n      \"Tag\",\n      \"Vendor\"\n    ],\n    \"relationship_types\": [\n      \"BELONGS_TO\",\n      \"HAS_TAG\",\n      \"SOLD_BY\"\n    ]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
               }
             },
             "url": {
@@ -597,8 +597,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteGraphSchema($partitionKey: String!, $schemaName: String!) { deleteGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName) }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\"\n}"
+                "query": "mutation DeleteGraphSchema($schemaName: String!) { deleteGraphSchema(schemaName: $schemaName) }",
+                "variables": "{\n  \"schemaName\": \"woocommerce_products\"\n}"
               }
             },
             "url": {
@@ -648,8 +648,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateDocument($partitionKey: String!, $documentUuid: String, $documentSource: String, $documentExternalId: String, $chunkIndex: Int, $documentTitle: String, $content: String, $status: String, $updatedBy: String!) { insertUpdateDocument(partitionKey: $partitionKey, documentUuid: $documentUuid, documentSource: $documentSource, documentExternalId: $documentExternalId, chunkIndex: $chunkIndex, documentTitle: $documentTitle, content: $content, status: $status, updatedBy: $updatedBy) { partitionKey documentUuid documentSource documentExternalId chunkIndex documentTitle content status updatedBy createdAt updatedAt } }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+                "query": "mutation InsertUpdateDocument($documentUuid: String, $documentSource: String, $documentExternalId: String, $chunkIndex: Int, $documentTitle: String, $content: String, $status: String, $updatedBy: String!) { insertUpdateDocument(documentUuid: $documentUuid, documentSource: $documentSource, documentExternalId: $documentExternalId, chunkIndex: $chunkIndex, documentTitle: $documentTitle, content: $content, status: $status, updatedBy: $updatedBy) { partitionKey documentUuid documentSource documentExternalId chunkIndex documentTitle content status updatedBy createdAt updatedAt } }",
+                "variables": "{\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
               }
             },
             "url": {
@@ -786,8 +786,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteDocument($partitionKey: String!, $documentUuid: String!) { deleteDocument(partitionKey: $partitionKey, documentUuid: $documentUuid) }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentUuid\": \"your-document-uuid\"\n}"
+                "query": "mutation DeleteDocument($documentUuid: String!) { deleteDocument(documentUuid: $documentUuid) }",
+                "variables": "{\n  \"documentUuid\": \"your-document-uuid\"\n}"
               }
             },
             "url": {
@@ -837,8 +837,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation ExecuteExtract($partitionKey: String!, $text: String!, $graphSchema: JSONCamelCase, $schemaName: String, $documentSource: String, $documentExternalId: String) { executeExtract(partitionKey: $partitionKey, text: $text, graphSchema: $graphSchema, schemaName: $schemaName, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"schemaName\": \"default\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
+                "query": "mutation ExecuteExtract($text: String!, $graphSchema: JSONCamelCase, $documentSource: String, $documentExternalId: String) { executeExtract(text: $text, graphSchema: $graphSchema, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
+                "variables": "{\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
               }
             },
             "url": {
@@ -883,8 +883,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation ExecuteExtract($partitionKey: String!, $text: String!, $graphSchema: JSONCamelCase, $schemaName: String, $documentSource: String, $documentExternalId: String) { executeExtract(partitionKey: $partitionKey, text: $text, graphSchema: $graphSchema, schemaName: $schemaName, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\n        \"label\": \"Product\",\n        \"properties\": [\n          \"name\",\n          \"sku\",\n          \"price\"\n        ]\n      },\n      {\n        \"label\": \"Vendor\",\n        \"properties\": [\n          \"name\"\n        ]\n      },\n      {\n        \"label\": \"Category\",\n        \"properties\": [\n          \"name\"\n        ]\n      }\n    ],\n    \"relationship_types\": [\n      {\n        \"type\": \"SOLD_BY\",\n        \"source\": \"Product\",\n        \"target\": \"Vendor\"\n      },\n      {\n        \"type\": \"BELONGS_TO\",\n        \"source\": \"Product\",\n        \"target\": \"Category\"\n      }\n    ]\n  },\n  \"schemaName\": \"product_catalog\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
+                "query": "mutation ExecuteExtract($text: String!, $graphSchema: JSONCamelCase, $documentSource: String, $documentExternalId: String) { executeExtract(text: $text, graphSchema: $graphSchema, documentSource: $documentSource, documentExternalId: $documentExternalId) { status partitionKey documentUuid schemaName entitiesExtracted relationshipsExtracted result } }",
+                "variables": "{\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\n        \"label\": \"Product\",\n        \"properties\": [\n          \"name\",\n          \"sku\",\n          \"price\"\n        ]\n      },\n      {\n        \"label\": \"Vendor\",\n        \"properties\": [\n          \"name\"\n        ]\n      },\n      {\n        \"label\": \"Category\",\n        \"properties\": [\n          \"name\"\n        ]\n      }\n    ],\n    \"relationship_types\": [\n      {\n        \"type\": \"SOLD_BY\",\n        \"source\": \"Product\",\n        \"target\": \"Vendor\"\n      },\n      {\n        \"type\": \"BELONGS_TO\",\n        \"source\": \"Product\",\n        \"target\": \"Category\"\n      }\n    ]\n  },\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
               }
             },
             "url": {
@@ -980,8 +980,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "query Search($queryText: String!, $searchMode: String, $schemaName: String, $topK: Int) { search(queryText: $queryText, searchMode: $searchMode, schemaName: $schemaName, topK: $topK) { results query total page limit } }",
-                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"schemaName\": \"default\",\n  \"topK\": 10\n}"
+                "query": "query Search($queryText: String!, $searchMode: String, $topK: Int) { search(queryText: $queryText, searchMode: $searchMode, topK: $topK) { results query total page limit } }",
+                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"topK\": 10\n}"
               }
             },
             "url": {
@@ -1215,8 +1215,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "query RAG($queryText: String!, $searchMode: String, $schemaName: String, $indexName: String, $topK: Int) { rag(queryText: $queryText, searchMode: $searchMode, schemaName: $schemaName, indexName: $indexName, topK: $topK) { answer sources context } }",
-                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"schemaName\": \"default\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+                "query": "query RAG($queryText: String!, $searchMode: String, $indexName: String, $topK: Int) { rag(queryText: $queryText, searchMode: $searchMode, indexName: $indexName, topK: $topK) { answer sources context } }",
+                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
               }
             },
             "url": {
@@ -1451,8 +1451,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateNeo4jInstance(\n  $partitionKey: String!\n  $instanceId: String\n  $neo4jUri: String!\n  $neo4jUsername: String\n  $neo4jPassword: String!\n  $neo4jDatabase: String\n  $containerId: String\n  $status: String\n  $maxConnectionPoolSize: Int\n) {\n  insertUpdateNeo4jInstance(\n    partitionKey: $partitionKey\n    instanceId: $instanceId\n    neo4jUri: $neo4jUri\n    neo4jUsername: $neo4jUsername\n    neo4jPassword: $neo4jPassword\n    neo4jDatabase: $neo4jDatabase\n    containerId: $containerId\n    status: $status\n    maxConnectionPoolSize: $maxConnectionPoolSize\n  ) {\n    partitionKey\n    instanceId\n    neo4jUri\n    neo4jUsername\n    neo4jDatabase\n    containerId\n    status\n    maxConnectionPoolSize\n    createdAt\n    updatedAt\n  }\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
+                "query": "mutation InsertUpdateNeo4jInstance(\n  $instanceId: String\n  $neo4jUri: String!\n  $neo4jUsername: String\n  $neo4jPassword: String!\n  $neo4jDatabase: String\n  $containerId: String\n  $status: String\n  $maxConnectionPoolSize: Int\n) {\n  insertUpdateNeo4jInstance(\n    instanceId: $instanceId\n    neo4jUri: $neo4jUri\n    neo4jUsername: $neo4jUsername\n    neo4jPassword: $neo4jPassword\n    neo4jDatabase: $neo4jDatabase\n    containerId: $containerId\n    status: $status\n    maxConnectionPoolSize: $maxConnectionPoolSize\n  ) {\n    partitionKey\n    instanceId\n    neo4jUri\n    neo4jUsername\n    neo4jDatabase\n    containerId\n    status\n    maxConnectionPoolSize\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"instanceId\": \"default\",\n  \"neo4jUri\": \"bolt://localhost:7687\",\n  \"neo4jUsername\": \"neo4j\",\n  \"neo4jPassword\": \"your-password\",\n  \"neo4jDatabase\": \"neo4j\",\n  \"status\": \"active\",\n  \"maxConnectionPoolSize\": 5\n}"
               }
             },
             "url": {
@@ -1577,8 +1577,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteNeo4jInstance($partitionKey: String!, $instanceId: String!) {\n  deleteNeo4jInstance(partitionKey: $partitionKey, instanceId: $instanceId)\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"instanceId\": \"default\"\n}"
+                "query": "mutation DeleteNeo4jInstance($instanceId: String!) {\n  deleteNeo4jInstance(instanceId: $instanceId)\n}",
+                "variables": "{\n  \"instanceId\": \"default\"\n}"
               }
             },
             "url": {
@@ -1624,8 +1624,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateGraphSchema(\n  $partitionKey: String!\n  $schemaName: String!\n  $schemaType: String\n  $schemaDefinition: JSONCamelCase\n  $sourceTextHash: String\n  $neo4jSchemaString: String\n  $status: String\n  $updatedBy: String\n) {\n  insertUpdateGraphSchema(\n    partitionKey: $partitionKey\n    schemaName: $schemaName\n    schemaType: $schemaType\n    schemaDefinition: $schemaDefinition\n    sourceTextHash: $sourceTextHash\n    neo4jSchemaString: $neo4jSchemaString\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    schemaName\n    schemaType\n    schemaDefinition\n    neo4jSchemaString\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\"Product\", \"Category\", \"Tag\", \"Vendor\"],\n    \"relationship_types\": [\"BELONGS_TO\", \"HAS_TAG\", \"SOLD_BY\"]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+                "query": "mutation InsertUpdateGraphSchema(\n  $schemaName: String!\n  $schemaType: String\n  $schemaDefinition: JSONCamelCase\n  $sourceTextHash: String\n  $neo4jSchemaString: String\n  $status: String\n  $updatedBy: String\n) {\n  insertUpdateGraphSchema(\n    schemaName: $schemaName\n    schemaType: $schemaType\n    schemaDefinition: $schemaDefinition\n    sourceTextHash: $sourceTextHash\n    neo4jSchemaString: $neo4jSchemaString\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    schemaName\n    schemaType\n    schemaDefinition\n    neo4jSchemaString\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"schemaName\": \"woocommerce_products\",\n  \"schemaType\": \"user\",\n  \"schemaDefinition\": {\n    \"node_types\": [\n      \"Product\",\n      \"Category\",\n      \"Tag\",\n      \"Vendor\"\n    ],\n    \"relationship_types\": [\n      \"BELONGS_TO\",\n      \"HAS_TAG\",\n      \"SOLD_BY\"\n    ]\n  },\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
               }
             },
             "url": {
@@ -1750,8 +1750,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteGraphSchema($partitionKey: String!, $schemaName: String!) {\n  deleteGraphSchema(partitionKey: $partitionKey, schemaName: $schemaName)\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"schemaName\": \"woocommerce_products\"\n}"
+                "query": "mutation DeleteGraphSchema($schemaName: String!) {\n  deleteGraphSchema(schemaName: $schemaName)\n}",
+                "variables": "{\n  \"schemaName\": \"woocommerce_products\"\n}"
               }
             },
             "url": {
@@ -1797,8 +1797,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation InsertUpdateDocument(\n  $partitionKey: String!\n  $documentUuid: String\n  $documentSource: String\n  $documentExternalId: String\n  $chunkIndex: Int\n  $documentTitle: String\n  $content: String\n  $status: String\n  $updatedBy: String!\n) {\n  insertUpdateDocument(\n    partitionKey: $partitionKey\n    documentUuid: $documentUuid\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n    chunkIndex: $chunkIndex\n    documentTitle: $documentTitle\n    content: $content\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    documentUuid\n    documentSource\n    documentExternalId\n    chunkIndex\n    documentTitle\n    content\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
+                "query": "mutation InsertUpdateDocument(\n  $documentUuid: String\n  $documentSource: String\n  $documentExternalId: String\n  $chunkIndex: Int\n  $documentTitle: String\n  $content: String\n  $status: String\n  $updatedBy: String!\n) {\n  insertUpdateDocument(\n    documentUuid: $documentUuid\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n    chunkIndex: $chunkIndex\n    documentTitle: $documentTitle\n    content: $content\n    status: $status\n    updatedBy: $updatedBy\n  ) {\n    partitionKey\n    documentUuid\n    documentSource\n    documentExternalId\n    chunkIndex\n    documentTitle\n    content\n    status\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-123\",\n  \"documentTitle\": \"Sample Product\",\n  \"content\": \"Product: Sample Product\\nSKU: 12345\\nPrice: 29.99\",\n  \"status\": \"active\",\n  \"updatedBy\": \"admin\"\n}"
               }
             },
             "url": {
@@ -1923,8 +1923,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation DeleteDocument($partitionKey: String!, $documentUuid: String!) {\n  deleteDocument(partitionKey: $partitionKey, documentUuid: $documentUuid)\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"documentUuid\": \"your-document-uuid\"\n}"
+                "query": "mutation DeleteDocument($documentUuid: String!) {\n  deleteDocument(documentUuid: $documentUuid)\n}",
+                "variables": "{\n  \"documentUuid\": \"your-document-uuid\"\n}"
               }
             },
             "url": {
@@ -1970,8 +1970,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation ExecuteExtract(\n  $partitionKey: String!\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $schemaName: String\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    partitionKey: $partitionKey\n    text: $text\n    graphSchema: $graphSchema\n    schemaName: $schemaName\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"schemaName\": \"default\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
+                "query": "mutation ExecuteExtract(\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    text: $text\n    graphSchema: $graphSchema\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
+                "variables": "{\n  \"text\": \"Product: Sample Snowboard\\nSKU: SB-001\\nType: simple\\nStatus: publish\\nPrice: 299.99\\nCategories: Winter Sports\\nTags: Snowboard, Sport\\nIn Stock: True\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-sb-001\"\n}"
               }
             },
             "url": {
@@ -1985,7 +1985,7 @@
                 "{{funct}}"
               ]
             },
-            "description": "Extract entities and relationships from text into the knowledge graph. Optionally specify a schema_name to use a saved schema, or pass graph_schema as JSON to define entity/relationship types."
+            "description": "Extract entities and relationships from text into the knowledge graph. Uses the active schema for the partition, or pass graph_schema as JSON to define entity/relationship types."
           },
           "response": []
         },
@@ -2012,8 +2012,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "mutation ExecuteExtract(\n  $partitionKey: String!\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $schemaName: String\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    partitionKey: $partitionKey\n    text: $text\n    graphSchema: $graphSchema\n    schemaName: $schemaName\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
-                "variables": "{\n  \"partitionKey\": \"gpt#nestaging\",\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\"label\": \"Product\", \"properties\": [\"name\", \"sku\", \"price\"]},\n      {\"label\": \"Vendor\", \"properties\": [\"name\"]},\n      {\"label\": \"Category\", \"properties\": [\"name\"]}\n    ],\n    \"relationship_types\": [\n      {\"type\": \"SOLD_BY\", \"source\": \"Product\", \"target\": \"Vendor\"},\n      {\"type\": \"BELONGS_TO\", \"source\": \"Product\", \"target\": \"Category\"}\n    ]\n  },\n  \"schemaName\": \"product_catalog\",\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
+                "query": "mutation ExecuteExtract(\n  $text: String!\n  $graphSchema: JSONCamelCase\n  $documentSource: String\n  $documentExternalId: String\n) {\n  executeExtract(\n    text: $text\n    graphSchema: $graphSchema\n    documentSource: $documentSource\n    documentExternalId: $documentExternalId\n  ) {\n    status\n    partitionKey\n    documentUuid\n    schemaName\n    entitiesExtracted\n    relationshipsExtracted\n    result\n  }\n}",
+                "variables": "{\n  \"text\": \"Product: Safety Glasses CK2\\nSKU: 19840280\\nVendor: MCR Safety\\nDescription: Super-lightweight safety glasses with clear lens.\",\n  \"graphSchema\": {\n    \"node_types\": [\n      {\n        \"label\": \"Product\",\n        \"properties\": [\n          \"name\",\n          \"sku\",\n          \"price\"\n        ]\n      },\n      {\n        \"label\": \"Vendor\",\n        \"properties\": [\n          \"name\"\n        ]\n      },\n      {\n        \"label\": \"Category\",\n        \"properties\": [\n          \"name\"\n        ]\n      }\n    ],\n    \"relationship_types\": [\n      {\n        \"type\": \"SOLD_BY\",\n        \"source\": \"Product\",\n        \"target\": \"Vendor\"\n      },\n      {\n        \"type\": \"BELONGS_TO\",\n        \"source\": \"Product\",\n        \"target\": \"Category\"\n      }\n    ]\n  },\n  \"documentSource\": \"woocommerce\",\n  \"documentExternalId\": \"product-ck2\"\n}"
               }
             },
             "url": {
@@ -2027,7 +2027,7 @@
                 "{{funct}}"
               ]
             },
-            "description": "Extract with a custom graph schema defining entity types and relationship types. The schema will be saved under the specified schema_name for reuse."
+            "description": "Extract with a custom graph schema defining entity types and relationship types."
           },
           "response": []
         }
@@ -2101,8 +2101,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $schemaName: String\n  $topK: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    schemaName: $schemaName\n    topK: $topK\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
-                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"schemaName\": \"default\",\n  \"topK\": 10\n}"
+                "query": "query Search(\n  $queryText: String!\n  $searchMode: String\n  $topK: Int\n) {\n  search(\n    queryText: $queryText\n    searchMode: $searchMode\n    topK: $topK\n  ) {\n    results\n    query\n    total\n    page\n    limit\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What products are sold by NEProdAI?\",\n  \"searchMode\": \"text2cypher\",\n  \"topK\": 10\n}"
               }
             },
             "url": {
@@ -2316,8 +2316,8 @@
             "body": {
               "mode": "graphql",
               "graphql": {
-                "query": "query RAG(\n  $queryText: String!\n  $searchMode: String\n  $schemaName: String\n  $indexName: String\n  $topK: Int\n) {\n  rag(\n    queryText: $queryText\n    searchMode: $searchMode\n    schemaName: $schemaName\n    indexName: $indexName\n    topK: $topK\n  ) {\n    answer\n    sources\n    context\n  }\n}",
-                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"schemaName\": \"default\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
+                "query": "query RAG(\n  $queryText: String!\n  $searchMode: String\n  $indexName: String\n  $topK: Int\n) {\n  rag(\n    queryText: $queryText\n    searchMode: $searchMode\n    indexName: $indexName\n    topK: $topK\n  ) {\n    answer\n    sources\n    context\n  }\n}",
+                "variables": "{\n  \"queryText\": \"What are the product categories?\",\n  \"searchMode\": \"vector\",\n  \"indexName\": \"vector\",\n  \"topK\": 5\n}"
               }
             },
             "url": {
@@ -2331,7 +2331,7 @@
                 "{{funct}}"
               ]
             },
-            "description": "RAG query with schema context. When schema_name is provided, the graph schema string is prepended to the query for richer context."
+            "description": "RAG query with schema context. The active schema for the partition is automatically used for context enrichment."
           },
           "response": []
         }

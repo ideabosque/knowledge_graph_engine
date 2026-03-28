@@ -257,11 +257,11 @@ class Config:
     def get_graph_rag_util(cls, partition_key: str) -> Any:
         from .neo4j_connection_manager import Neo4jConnectionManager
         from ..utils.graph_rag_util import GraphRAGUtil
-        from ..models.neo4j_instance import Neo4jInstanceModel
+        from ..models.neo4j_instance import get_active_neo4j_instance
 
         driver = Neo4jConnectionManager.get_driver(partition_key)
         try:
-            instance = Neo4jInstanceModel.get(partition_key, "default")
+            instance = get_active_neo4j_instance(partition_key)
             database = instance.neo4j_database or "neo4j"
         except Exception:
             database = "neo4j"

@@ -38,14 +38,14 @@ class Neo4jConnectionManager:
 
     @classmethod
     def _load_instance(cls, partition_key: str) -> Any:
-        """Load Neo4j connection details from DynamoDB registry."""
-        from ..models.neo4j_instance import Neo4jInstanceModel
+        """Load the active Neo4j instance for a partition."""
+        from ..models.neo4j_instance import get_active_neo4j_instance, Neo4jInstanceModel
 
         try:
-            return Neo4jInstanceModel.get(partition_key, "default")
+            return get_active_neo4j_instance(partition_key)
         except Neo4jInstanceModel.DoesNotExist:
             raise ValueError(
-                f"No Neo4j instance registered for partition: {partition_key}. "
+                f"No active Neo4j instance for partition: {partition_key}. "
                 f"Register via insertUpdateNeo4jInstance mutation first."
             )
 

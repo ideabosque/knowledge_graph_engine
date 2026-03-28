@@ -63,6 +63,18 @@ def get_graph_schema(partition_key: str, schema_name: str) -> GraphSchemaModel:
     return GraphSchemaModel.get(partition_key, schema_name)
 
 
+def get_active_graph_schema(partition_key: str) -> GraphSchemaModel:
+    """Get the active graph schema for a partition. Raises if none found."""
+    for schema in GraphSchemaModel.query(
+        partition_key,
+        filter_condition=GraphSchemaModel.status == "active",
+    ):
+        return schema
+    raise GraphSchemaModel.DoesNotExist(
+        f"No active graph schema for partition: {partition_key}"
+    )
+
+
 def get_graph_schema_count(partition_key: str, schema_name: str) -> int:
     return GraphSchemaModel.count(partition_key, GraphSchemaModel.schema_name == schema_name)
 
@@ -70,6 +82,8 @@ def get_graph_schema_count(partition_key: str, schema_name: str) -> int:
 def get_graph_schema_type(info: ResolveInfo, schema: GraphSchemaModel) -> GraphSchemaType:
     _ = info  # Keep for signature compatibility with decorators
     schema_dict = schema.__dict__["attribute_values"].copy()
+    if schema_dict.get("schema_definition") is None:
+        schema_dict["schema_definition"] = {}
     return GraphSchemaType(**normalize_to_json(schema_dict))
 
 
@@ -134,6 +148,20 @@ def resolve_graph_schema_list(info: ResolveInfo, **kwargs: Any) -> Any:
     return inquiry_funct, count_funct, args
 
 
+def _deactivate_current_active_schema(partition_key: str, exclude_schema_name: str = None):
+    """Deactivate the currently active schema for a partition, optionally excluding one."""
+    for schema in GraphSchemaModel.query(
+        partition_key,
+        filter_condition=GraphSchemaModel.status == "active",
+    ):
+        if exclude_schema_name and schema.schema_name == exclude_schema_name:
+            continue
+        schema.update(actions=[
+            GraphSchemaModel.status.set("inactive"),
+            GraphSchemaModel.updated_at.set(pendulum.now("UTC")),
+        ])
+
+
 @insert_update_decorator(
     keys={"hash_key": "partition_key", "range_key": "schema_name"},
     model_funct=get_graph_schema,
@@ -145,6 +173,11 @@ def insert_update_graph_schema(info: ResolveInfo, **kwargs: Any) -> Any:
     schema_name = kwargs.get("schema_name")
 
     if kwargs.get("entity") is None:
+        # New insert: default status is "active", so deactivate current active
+        new_status = kwargs.get("status", "active")
+        if new_status == "active":
+            _deactivate_current_active_schema(partition_key)
+
         cols = {
             "schema_type": kwargs.get("schema_type", "auto"),
             "schema_definition": kwargs.get("schema_definition", {}),
@@ -168,6 +201,10 @@ def insert_update_graph_schema(info: ResolveInfo, **kwargs: Any) -> Any:
         return
 
     schema = kwargs.get("entity")
+
+    # If activating this schema, deactivate all others first
+    if kwargs.get("status") == "active":
+        _deactivate_current_active_schema(partition_key, exclude_schema_name=schema.schema_name)
 
     actions = [
         GraphSchemaModel.updated_at.set(pendulum.now("UTC")),

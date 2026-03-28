@@ -61,6 +61,18 @@ def get_neo4j_instance(partition_key: str, instance_id: str) -> Neo4jInstanceMod
     return Neo4jInstanceModel.get(partition_key, instance_id)
 
 
+def get_active_neo4j_instance(partition_key: str) -> Neo4jInstanceModel:
+    """Get the active Neo4j instance for a partition. Raises if none found."""
+    for instance in Neo4jInstanceModel.query(
+        partition_key,
+        filter_condition=Neo4jInstanceModel.status == "active",
+    ):
+        return instance
+    raise Neo4jInstanceModel.DoesNotExist(
+        f"No active Neo4j instance for partition: {partition_key}"
+    )
+
+
 def get_neo4j_instance_count(partition_key: str, instance_id: str) -> int:
     return Neo4jInstanceModel.count(
         partition_key, Neo4jInstanceModel.instance_id == instance_id
@@ -102,6 +114,26 @@ def resolve_neo4j_instance_list(info: ResolveInfo, **kwargs: Any) -> Any:
     return inquiry_funct, count_funct, args
 
 
+def _deactivate_current_active_instance(partition_key: str, exclude_instance_id: str = None):
+    """Deactivate the currently active instance for a partition, optionally excluding one.
+    Also closes the cached Neo4j driver so the new active instance is picked up.
+    """
+    from ..handlers.neo4j_connection_manager import Neo4jConnectionManager
+
+    for instance in Neo4jInstanceModel.query(
+        partition_key,
+        filter_condition=Neo4jInstanceModel.status == "active",
+    ):
+        if exclude_instance_id and instance.instance_id == exclude_instance_id:
+            continue
+        instance.update(actions=[
+            Neo4jInstanceModel.status.set("inactive"),
+            Neo4jInstanceModel.updated_at.set(pendulum.now("UTC")),
+        ])
+    # Close cached driver so the next request picks up the new active instance
+    Neo4jConnectionManager.close_driver(partition_key)
+
+
 @insert_update_decorator(
     keys={"hash_key": "partition_key", "range_key": "instance_id"},
     model_funct=get_neo4j_instance,
@@ -114,6 +146,11 @@ def insert_update_neo4j_instance(info: ResolveInfo, **kwargs: Any) -> Any:
     instance_id = kwargs.get("instance_id", "default")
 
     if kwargs.get("entity") is None:
+        # New insert: default status is "active", so deactivate current active
+        new_status = kwargs.get("status", "active")
+        if new_status == "active":
+            _deactivate_current_active_instance(partition_key)
+
         cols = {
             "created_at": pendulum.now("UTC"),
             "updated_at": pendulum.now("UTC"),
@@ -138,6 +175,10 @@ def insert_update_neo4j_instance(info: ResolveInfo, **kwargs: Any) -> Any:
         return
 
     instance = kwargs.get("entity")
+
+    # If activating this instance, deactivate all others first
+    if kwargs.get("status") == "active":
+        _deactivate_current_active_instance(partition_key, exclude_instance_id=instance.instance_id)
 
     actions = [
         Neo4jInstanceModel.updated_at.set(pendulum.now("UTC")),

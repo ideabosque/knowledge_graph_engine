@@ -27,10 +27,10 @@ class RAGHandler:
         partition_key: str,
         query_text: str,
         search_mode: str = "vector",
-        schema_name: Optional[str] = None,
         index_name: str = "vector",
         top_k: int = 5,
         prompt: Optional[str] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Execute RAG query using GraphRAG with configurable retriever.
@@ -39,7 +39,6 @@ class RAGHandler:
             partition_key: Tenant partition key
             query_text: User query
             search_mode: Retriever mode (vector, hybrid)
-            schema_name: Schema name for context enrichment
             index_name: Vector index name
             top_k: Number of results to retrieve
             prompt: Optional custom prompt template
@@ -51,9 +50,7 @@ class RAGHandler:
 
         retriever = self._build_retriever(graph_rag, search_mode, index_name)
 
-        schema_context = ""
-        if schema_name:
-            schema_context = self._load_schema_context(partition_key, schema_name)
+        schema_context = self._load_schema_context(partition_key)
 
         rag_kwargs = {"llm": graph_rag.llm, "retriever": retriever}
         if prompt:
@@ -143,12 +140,12 @@ class RAGHandler:
                 neo4j_database=graph_rag.neo4j_database,
             )
 
-    def _load_schema_context(self, partition_key: str, schema_name: str) -> str:
-        """Load schema context for RAG enrichment."""
-        from ..models.graph_schema import get_graph_schema
+    def _load_schema_context(self, partition_key: str) -> str:
+        """Load the active schema context for RAG enrichment."""
+        from ..models.graph_schema import get_active_graph_schema
 
         try:
-            record = get_graph_schema(partition_key, schema_name or "default")
+            record = get_active_graph_schema(partition_key)
             if record and record.neo4j_schema_string:
                 return f"\nGraph schema for this tenant:\n{record.neo4j_schema_string}\n"
         except Exception:

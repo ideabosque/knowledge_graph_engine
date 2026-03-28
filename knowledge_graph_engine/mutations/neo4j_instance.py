@@ -18,7 +18,6 @@ from ..handlers.config import Config
 
 class InsertUpdateNeo4jInstance(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         instance_id = String()
         neo4j_uri = String(required=True)
         neo4j_username = String()
@@ -33,15 +32,11 @@ class InsertUpdateNeo4jInstance(Mutation):
     @staticmethod
     def mutate(root, info, **kwargs):
         logger = Config.get_logger()
-        partition_key = kwargs.get("partition_key")
+        partition_key = info.context.get("partition_key")
         instance_id = kwargs.get("instance_id", "default")
-        
-        # Get partition_key from context if not provided
-        if not partition_key and hasattr(info, "context"):
-            partition_key = info.context.get("partition_key")
-        
+
         if not partition_key:
-            raise ValueError("partition_key is required")
+            raise ValueError("partition_key is required in context")
         
         try:
             insert_update_neo4j_instance(info, **kwargs)
@@ -53,7 +48,6 @@ class InsertUpdateNeo4jInstance(Mutation):
 
 class DeleteNeo4jInstance(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         instance_id = String(required=True)
 
     Output = String
@@ -61,15 +55,11 @@ class DeleteNeo4jInstance(Mutation):
     @staticmethod
     def mutate(root, info, **kwargs):
         logger = Config.get_logger()
-        partition_key = kwargs.get("partition_key")
+        partition_key = info.context.get("partition_key")
         instance_id = kwargs.get("instance_id")
-        
-        # Get partition_key from context if not provided
-        if not partition_key and hasattr(info, "context"):
-            partition_key = info.context.get("partition_key")
-        
+
         if not partition_key:
-            raise ValueError("partition_key is required")
+            raise ValueError("partition_key is required in context")
         
         try:
             instance = get_neo4j_instance(partition_key, instance_id)
