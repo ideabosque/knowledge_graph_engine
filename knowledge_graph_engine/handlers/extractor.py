@@ -135,6 +135,13 @@ class Extractor:
             entities_count = extraction_result.get("entities_count", 0)
             relationships_count = extraction_result.get("relationships_count", 0)
 
+        # Convert extraction_result to a JSON-serializable dict
+        serializable_result = {}
+        if hasattr(extraction_result, "result") and isinstance(extraction_result.result, dict):
+            serializable_result = extraction_result.result
+        elif isinstance(extraction_result, dict):
+            serializable_result = extraction_result
+
         return {
             "status": "success",
             "partition_key": partition_key,
@@ -142,7 +149,7 @@ class Extractor:
             "schema_name": "active",
             "entities_extracted": entities_count,
             "relationships_extracted": relationships_count,
-            "result": extraction_result,
+            "result": serializable_result,
         }
 
     def _extract_fallback(
