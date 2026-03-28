@@ -68,7 +68,7 @@ def deploy() -> List:
                     ],
                     "type": "RequestResponse",
                     "support_methods": ["POST"],
-                    "is_auth_required": True,
+                    "is_auth_required": False,
                     "is_graphql": True,
                     "settings": "knowledge_graph_engine",
                     "disabled_in_resources": True,
