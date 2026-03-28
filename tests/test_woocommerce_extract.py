@@ -121,13 +121,11 @@ def product_to_text(product: dict) -> str:
 
 EXTRACT_MUTATION = """
     mutation(
-        $partitionKey: String!,
         $text: String!,
         $documentSource: String,
         $documentExternalId: String
     ) {
         executeExtract(
-            partitionKey: $partitionKey,
             text: $text,
             documentSource: $documentSource,
             documentExternalId: $documentExternalId
@@ -157,10 +155,6 @@ class TestWooCommerceExtract:
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        from knowledge_graph_engine.handlers.partition_manager import PartitionManager
-
-        partition_key = PartitionManager.build_partition_key(endpoint_id, part_id)
-
         products = fetch_products(per_page=10, page=1)
         assert len(products) > 0, "No products found in WooCommerce store"
 
@@ -172,7 +166,6 @@ class TestWooCommerceExtract:
             print(f"\n--- Extracting: {product.get('name')} (ID: {product.get('id')}) ---")
 
             variables = {
-                "partitionKey": partition_key,
                 "text": text,
                 "documentSource": "woocommerce:product",
                 "documentExternalId": str(product.get("id", "")),

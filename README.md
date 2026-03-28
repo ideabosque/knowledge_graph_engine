@@ -97,11 +97,10 @@ python -m knowledge_graph_engine
 ```
 
 The daemon exposes:
-- `POST /graphql` — GraphQL endpoint (requires JWT token)
-- `POST /auth/login` — Get JWT token
-- `GET /auth/me` — Current user info
+- `POST /{endpoint_id}/knowledge_graph_engine_graphql` — GraphQL endpoint (requires JWT token, `Part-Id` header)
+- `POST /auth/token` — Get JWT token (`username` + `password` form data)
+- `GET /me` — Current user info (requires JWT token)
 - `GET /health` — Health check (no auth required)
-- `GET /ping` — Ping (no auth required)
 
 ### Search Modes
 
