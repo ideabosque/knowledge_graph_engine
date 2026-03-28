@@ -63,11 +63,19 @@ def get_neo4j_instance(partition_key: str, instance_id: str) -> Neo4jInstanceMod
 
 def get_active_neo4j_instance(partition_key: str) -> Neo4jInstanceModel:
     """Get the active Neo4j instance for a partition. Raises if none found."""
-    for instance in Neo4jInstanceModel.query(
-        partition_key,
-        filter_condition=Neo4jInstanceModel.status == "active",
-    ):
-        return instance
+    active_instances = list(
+        Neo4jInstanceModel.query(
+            partition_key,
+            filter_condition=Neo4jInstanceModel.status == "active",
+        )
+    )
+    if active_instances:
+        if len(active_instances) > 1:
+            Config.get_logger().warning(
+                "Multiple active Neo4j instances found for partition %s; choosing the most recently updated one.",
+                partition_key,
+            )
+        return max(active_instances, key=lambda item: item.updated_at or item.created_at)
     raise Neo4jInstanceModel.DoesNotExist(
         f"No active Neo4j instance for partition: {partition_key}"
     )
@@ -108,7 +116,7 @@ def resolve_neo4j_instance_list(info: ResolveInfo, **kwargs: Any) -> Any:
         count_funct = Neo4jInstanceModel.count
         args = []
 
-    if the_filters:
+    if the_filters is not None:
         args.append(the_filters)
 
     return inquiry_funct, count_funct, args
@@ -206,5 +214,10 @@ def insert_update_neo4j_instance(info: ResolveInfo, **kwargs: Any) -> Any:
     model_funct=get_neo4j_instance,
 )
 def delete_neo4j_instance(info: ResolveInfo, **kwargs: Any) -> bool:
+    from ..handlers.neo4j_connection_manager import Neo4jConnectionManager
+
+    entity = kwargs["entity"]
+    partition_key = entity.partition_key
     kwargs["entity"].delete()
+    Neo4jConnectionManager.close_driver(partition_key)
     return True

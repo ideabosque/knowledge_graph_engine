@@ -54,7 +54,9 @@ class CascadingCachePurger:
 
         children = Config.CACHE_RELATIONSHIPS.get(entity_type, [])
         for child in children:
-            child_entity_type = child.get("entity_type")
+            child_entity_type = (
+                child.get("entity_type") if isinstance(child, dict) else child
+            )
             if child_entity_type:
                 CascadingCachePurger.purge_entity_cascading_cache(
                     logger=logger,

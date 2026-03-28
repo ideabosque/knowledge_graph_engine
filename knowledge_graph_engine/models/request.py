@@ -3,6 +3,7 @@ from __future__ import print_function
 
 __author__ = "silvaengine"
 
+import uuid
 from typing import Any, Dict
 
 import pendulum
@@ -83,7 +84,7 @@ def resolve_request_list(info: ResolveInfo, **kwargs: Any) -> Any:
         count_funct = RequestModel.count
         args = []
 
-    if the_filters:
+    if the_filters is not None:
         args.append(the_filters)
 
     return inquiry_funct, count_funct, args
@@ -104,6 +105,9 @@ def insert_update_request(info: ResolveInfo, **kwargs: Any) -> Any:
             "created_at": pendulum.now("UTC"),
             "updated_at": pendulum.now("UTC"),
         }
+
+        if not request_uuid:
+            request_uuid = f"req-{pendulum.now('UTC').int_timestamp}-{uuid.uuid4().hex[:8]}"
 
         for key in [
             "user_query",

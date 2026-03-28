@@ -35,7 +35,7 @@ class DocumentUpdatedAtIndex(LocalSecondaryIndex):
         projection = AllProjection()
 
     partition_key = UnicodeAttribute(hash_key=True)
-    updated_at = UnicodeAttribute(range_key=True)
+    updated_at = UTCDateTimeAttribute(range_key=True)
 
 
 class DocumentExternalIdIndex(LocalSecondaryIndex):
@@ -103,7 +103,7 @@ def resolve_document(
     if not partition_key or not document_uuid:
         return None
 
-    return get_document(partition_key, document_uuid)
+    return get_document_type(info, get_document(partition_key, document_uuid))
 
 
 @resolve_list_decorator(
@@ -152,8 +152,9 @@ def resolve_document_list(info: ResolveInfo, **kwargs: Any) -> Any:
     if document_source:
         the_filters = DocumentModel.document_source == document_source
     if statuses:
-        the_filters &= DocumentModel.status.is_in(*statuses)
-    if the_filters:
+        status_filter = DocumentModel.status.is_in(*statuses)
+        the_filters = status_filter if the_filters is None else the_filters & status_filter
+    if the_filters is not None:
         args.append(the_filters)
 
     return inquiry_funct, count_funct, args

@@ -4,10 +4,17 @@ from __future__ import print_function
 
 __author__ = "silvaengine"
 
-from ._compat import ensure_neo4j_compat, ensure_neo4j_graphrag_compat
+from ._compat import (
+    ensure_neo4j_compat,
+    ensure_neo4j_graphrag_compat,
+    ensure_silvaengine_dynamodb_base_compat,
+    ensure_silvaengine_utility_compat,
+)
 
 ensure_neo4j_compat()
 ensure_neo4j_graphrag_compat()
+ensure_silvaengine_dynamodb_base_compat()
+ensure_silvaengine_utility_compat()
 
 __all__ = ["KnowledgeGraphEngine", "deploy"]
 

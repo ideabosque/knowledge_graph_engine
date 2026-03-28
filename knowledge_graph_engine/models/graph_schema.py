@@ -28,7 +28,7 @@ class GraphSchemaUpdatedAtIndex(LocalSecondaryIndex):
         projection = AllProjection()
 
     partition_key = UnicodeAttribute(hash_key=True)
-    updated_at = UnicodeAttribute(range_key=True)
+    updated_at = UTCDateTimeAttribute(range_key=True)
 
 
 class GraphSchemaModel(BaseModel):
@@ -65,11 +65,19 @@ def get_graph_schema(partition_key: str, schema_name: str) -> GraphSchemaModel:
 
 def get_active_graph_schema(partition_key: str) -> GraphSchemaModel:
     """Get the active graph schema for a partition. Raises if none found."""
-    for schema in GraphSchemaModel.query(
-        partition_key,
-        filter_condition=GraphSchemaModel.status == "active",
-    ):
-        return schema
+    active_schemas = list(
+        GraphSchemaModel.query(
+            partition_key,
+            filter_condition=GraphSchemaModel.status == "active",
+        )
+    )
+    if active_schemas:
+        if len(active_schemas) > 1:
+            Config.get_logger().warning(
+                "Multiple active graph schemas found for partition %s; choosing the most recently updated one.",
+                partition_key,
+            )
+        return max(active_schemas, key=lambda item: item.updated_at or item.created_at)
     raise GraphSchemaModel.DoesNotExist(
         f"No active graph schema for partition: {partition_key}"
     )
@@ -96,7 +104,7 @@ def resolve_graph_schema(
     if not partition_key or not schema_name:
         return None
 
-    return get_graph_schema(partition_key, schema_name)
+    return get_graph_schema_type(info, get_graph_schema(partition_key, schema_name))
 
 
 def get_graph_schemas_for_partition(partition_key: str) -> list:
@@ -141,8 +149,9 @@ def resolve_graph_schema_list(info: ResolveInfo, **kwargs: Any) -> Any:
     if schema_type:
         the_filters = GraphSchemaModel.schema_type == schema_type
     if statuses:
-        the_filters &= GraphSchemaModel.status.is_in(*statuses)
-    if the_filters:
+        status_filter = GraphSchemaModel.status.is_in(*statuses)
+        the_filters = status_filter if the_filters is None else the_filters & status_filter
+    if the_filters is not None:
         args.append(the_filters)
 
     return inquiry_funct, count_funct, args
