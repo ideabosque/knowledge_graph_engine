@@ -63,7 +63,9 @@ class TestNeo4jInstance:
     """Test Neo4j instance registration via GraphQL mutation."""
 
     def test_register_neo4j_instance(self, engine):
-        """Register a Neo4j instance using .env settings."""
+        """Register a Neo4j instance using .env settings.
+        partition_key is passed via context (endpoint_id/part_id), not as a mutation argument.
+        """
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
@@ -78,7 +80,6 @@ class TestNeo4jInstance:
 
         mutation = """
             mutation(
-                $partitionKey: String!,
                 $instanceId: String,
                 $neo4jUri: String!,
                 $neo4jUsername: String,
@@ -86,7 +87,6 @@ class TestNeo4jInstance:
                 $neo4jDatabase: String
             ) {
                 insertUpdateNeo4jInstance(
-                    partitionKey: $partitionKey,
                     instanceId: $instanceId,
                     neo4jUri: $neo4jUri,
                     neo4jUsername: $neo4jUsername,
@@ -104,7 +104,6 @@ class TestNeo4jInstance:
         """
 
         variables = {
-            "partitionKey": partition_key,
             "instanceId": "default",
             "neo4jUri": neo4j_uri,
             "neo4jUsername": SETTING.get("neo4j_username", "neo4j"),
