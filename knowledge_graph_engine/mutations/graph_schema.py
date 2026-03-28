@@ -12,7 +12,6 @@ from ..types.graph_schema import GraphSchemaType
 
 class InsertUpdateGraphSchema(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         schema_name = String(required=True)
         schema_type = String()
         schema_definition = JSONCamelCase()
@@ -25,17 +24,21 @@ class InsertUpdateGraphSchema(Mutation):
 
     @staticmethod
     def mutate(root, info, **kwargs):
+        partition_key = info.context.get("partition_key")
+
+        if not partition_key:
+            raise ValueError("partition_key is required in context")
+
+        kwargs["partition_key"] = partition_key
         insert_update_graph_schema(info, **kwargs)
         from ..models.graph_schema import get_graph_schema
 
-        partition_key = kwargs.get("partition_key")
         schema_name = kwargs.get("schema_name")
         return get_graph_schema(partition_key, schema_name)
 
 
 class DeleteGraphSchema(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         schema_name = String(required=True)
 
     Output = String
@@ -44,7 +47,11 @@ class DeleteGraphSchema(Mutation):
     def mutate(root, info, **kwargs):
         from ..models.graph_schema import get_graph_schema
 
-        partition_key = kwargs.get("partition_key")
+        partition_key = info.context.get("partition_key")
+
+        if not partition_key:
+            raise ValueError("partition_key is required in context")
+
         schema_name = kwargs.get("schema_name")
         schema = get_graph_schema(partition_key, schema_name)
         delete_graph_schema(info, entity=schema)

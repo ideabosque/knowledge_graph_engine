@@ -23,7 +23,6 @@ class SearchHandler:
         partition_key: str,
         query_text: str,
         search_mode: str = "text2cypher",
-        schema_name: Optional[str] = None,
         index_name: str = "vector",
         retrieval_query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
@@ -50,7 +49,7 @@ class SearchHandler:
             )
 
         elif search_mode == "text2cypher":
-            neo4j_schema = self._load_neo4j_schema(partition_key, schema_name or "default")
+            neo4j_schema = self._load_neo4j_schema(partition_key)
             results = graph_rag.text2cypher_search(
                 query_text=query_text,
                 neo4j_schema=neo4j_schema,
@@ -114,12 +113,12 @@ class SearchHandler:
             if logger:
                 logger.warning(f"Failed to record search request: {e}")
 
-    def _load_neo4j_schema(self, partition_key: str, schema_name: str) -> Optional[str]:
-        """Load the partition's schema string for text2cypher generation."""
-        from ..models.graph_schema import get_graph_schema
+    def _load_neo4j_schema(self, partition_key: str) -> Optional[str]:
+        """Load the active schema string for text2cypher generation."""
+        from ..models.graph_schema import get_active_graph_schema
 
         try:
-            record = get_graph_schema(partition_key, schema_name)
+            record = get_active_graph_schema(partition_key)
             return record.neo4j_schema_string if record else None
         except Exception:
             return None

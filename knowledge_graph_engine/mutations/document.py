@@ -15,7 +15,6 @@ from ..handlers.config import Config
 
 class InsertUpdateDocument(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         document_uuid = String()
         document_source = String()
         document_external_id = String()
@@ -31,14 +30,10 @@ class InsertUpdateDocument(Mutation):
     @staticmethod
     def mutate(root, info, **kwargs):
         logger = Config.get_logger()
-        partition_key = kwargs.get("partition_key")
-        
-        # Get partition_key from context if not provided
-        if not partition_key and hasattr(info, "context"):
-            partition_key = info.context.get("partition_key")
-        
+        partition_key = info.context.get("partition_key")
+
         if not partition_key:
-            raise ValueError("partition_key is required")
+            raise ValueError("partition_key is required in context")
         
         try:
             insert_update_document(info, **kwargs)
@@ -51,7 +46,6 @@ class InsertUpdateDocument(Mutation):
 
 class DeleteDocument(Mutation):
     class Arguments:
-        partition_key = String(required=True)
         document_uuid = String(required=True)
 
     Output = String
@@ -59,15 +53,11 @@ class DeleteDocument(Mutation):
     @staticmethod
     def mutate(root, info, **kwargs):
         logger = Config.get_logger()
-        partition_key = kwargs.get("partition_key")
+        partition_key = info.context.get("partition_key")
         document_uuid = kwargs.get("document_uuid")
-        
-        # Get partition_key from context if not provided
-        if not partition_key and hasattr(info, "context"):
-            partition_key = info.context.get("partition_key")
-        
+
         if not partition_key:
-            raise ValueError("partition_key is required")
+            raise ValueError("partition_key is required in context")
         
         try:
             document = get_document(partition_key, document_uuid)

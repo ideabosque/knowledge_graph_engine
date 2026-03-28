@@ -47,7 +47,7 @@ Rebuild `ai_kg_engine` as `knowledge_graph_engine` with tenant-isolated Neo4j in
               v                      v                      v
      +-----------------+   +-----------------+   +-----------------+
      | SchemaResolver  |   | GraphRAGUtil    |   | GraphRAGUtil    |
-     | (5 modes)       |   | (4 search modes)|   | (GraphRAG)      |
+     | (active-only)   |   | (4 search modes)|   | (GraphRAG)      |
      +---------+-------+   +--------+--------+   +--------+--------+
               |                      |                      |
               +----------------------+----------------------+
@@ -112,17 +112,21 @@ partition_key "ep-002#part-b"  -->  bolt://neo4j-ep002-partb:7687
 ```
 knowledge_graph_engine/
 ├── __init__.py                 # Exports KnowledgeGraphEngine, deploy()
+├── __main__.py                 # python -m knowledge_graph_engine entry point
 ├── _compat.py                  # Stub modules when neo4j/neo4j-graphrag not installed
-├── main.py                     # Engine class + deploy() + _apply_partition_defaults()
-├── schema.py                   # GraphQL: type_class(), Query, Mutations
+├── main.py                     # Engine class + daemon() + deploy() + main()
 ├── handlers/
+│   ├── schema.py               # GraphQL: type_class(), Query, Mutations
 │   ├── config.py               # Thread-safe Config singleton (aligned with aace)
 │   ├── neo4j_connection_manager.py  # Driver pool, one per tenant
 │   ├── partition_manager.py    # build/parse partition_key
-│   ├── schema_resolver.py      # 5-mode schema resolution
+│   ├── schema_resolver.py      # Schema resolution (active, user-provided, auto-generate)
 │   ├── extractor.py            # KG extraction via SimpleKGPipeline
 │   ├── search_handler.py       # 4-mode search dispatch
-│   └── rag_handler.py          # RAG with configurable retriever
+│   ├── rag_handler.py          # RAG with configurable retriever
+│   ├── fastapi_app.py          # FastAPI app for daemon mode
+│   ├── auth_router.py          # JWT auth endpoints (login, me)
+│   └── middleware.py           # FlexJWTMiddleware for daemon auth
 ├── models/
 │   ├── document.py             # kge-documents (hash: partition_key, range: document_uuid)
 │   ├── graph_schema.py         # kge-graph_schemas (hash: partition_key, range: schema_name)
@@ -180,13 +184,16 @@ knowledge_graph_engine/
 
 | Component | Implementation | File |
 |-----------|---------------|------|
-| Engine class | `KnowledgeGraphEngine(Graphql)` with `_apply_partition_defaults()` | [main.py](../knowledge_graph_engine/main.py) |
+| Engine class | `KnowledgeGraphEngine(Graphql)` with `_apply_partition_defaults()` + `daemon()` | [main.py](../knowledge_graph_engine/main.py) |
+| Daemon mode | `engine.daemon()` starts uvicorn with JWT auth (matching `ai_mcp_daemon_engine`) | [main.py](../knowledge_graph_engine/main.py) |
 | Deploy function | Returns list with GraphQL + async extraction functions | [main.py](../knowledge_graph_engine/main.py#L17-L45) |
 | Config singleton | Thread-safe, lazy init, AWS services, cache config | [config.py](../knowledge_graph_engine/handlers/config.py) |
-| Connection manager | `Neo4jConnectionManager` with per-tenant driver cache | [neo4j_connection_manager.py](../knowledge_graph_engine/handlers/neo4j_connection_manager.py) |
+| Connection manager | `Neo4jConnectionManager` with per-tenant driver cache, uses active instance | [neo4j_connection_manager.py](../knowledge_graph_engine/handlers/neo4j_connection_manager.py) |
 | Partition manager | `build_partition_key()`, `parse_partition_key()` | [partition_manager.py](../knowledge_graph_engine/handlers/partition_manager.py) |
 | Compatibility layer | Stub modules for `neo4j` and `neo4j-graphrag` | [_compat.py](../knowledge_graph_engine/_compat.py) |
-| GraphQL schema | `type_class()`, `Query`, `Mutations`, `build_graphql_schema()` | [schema.py](../knowledge_graph_engine/schema.py) |
+| GraphQL schema | `type_class()`, `Query`, `Mutations`, `build_graphql_schema()` | [schema.py](../knowledge_graph_engine/handlers/schema.py) |
+| FastAPI app | FastAPI app for daemon mode with auth middleware | [fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py) |
+| Auth router | JWT login/me endpoints (local + Cognito) | [auth_router.py](../knowledge_graph_engine/handlers/auth_router.py) |
 
 **Key design decisions**:
 
@@ -306,17 +313,25 @@ from neo4j_graphrag.llm import OpenAILLM, AnthropicLLM, OllamaLLM, VertexAILLM, 
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 ```
 
-### Schema Resolution (5 modes)
+### Schema Resolution (Active-Only Pattern)
 
-`SchemaResolver` ([schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py)) resolves graph schema for extraction with this priority:
+`SchemaResolver` ([schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py)) resolves graph schema for extraction. Only one schema per partition can be active at a time. The system always uses the active schema unless a `graph_schema` dict is provided in the extract call.
 
-| Mode | Input | Resolution |
-|------|-------|------------|
-| **Saved** | `schema_name` only | Load `GraphSchema` from DynamoDB by name |
-| **User-provided** | `graph_schema` dict | Convert to `GraphSchema` via `SchemaBuilder` |
-| **String literal** | `"EXTRACTED"`, `"FREE"`, `"FROM_GRAPH"` | Pass to `SimpleKGPipeline` directly, or extract from existing graph |
-| **Hybrid** | `graph_schema` dict with `auto_extend: true` | Merge user schema with LLM-discovered types |
-| **Auto-generated** | Neither provided | `SchemaFromTextExtractor` generates, saves as "default" |
+**Resolution priority:**
+
+| Priority | Input | Resolution |
+|:---:|-------|------------|
+| 1 | `graph_schema` dict provided | Convert to `GraphSchema`, **save as new active** (deactivates old active) |
+| 2 | `graph_schema` dict with `auto_extend: true` | Merge with LLM-discovered types, **save as new active** |
+| 3 | `graph_schema` string (`"EXTRACTED"`, `"FREE"`, `"FROM_GRAPH"`) | Pass to `SimpleKGPipeline` directly |
+| 4 | No `graph_schema` provided | Load **active schema** from DynamoDB |
+| 5 | No active schema exists | Auto-generate from text via LLM, **save as new active** |
+
+**Active-only enforcement:**
+- `schema_name` is **not** exposed as a parameter in extract, search, or RAG operations
+- All operations use the active schema for the partition automatically
+- `schema_name` only appears in the Graph Schema CRUD mutations/queries (it's the DynamoDB range key for managing schemas)
+- When a new schema is inserted or an old one is activated via `insertUpdateGraphSchema`, the previously active schema is automatically deactivated
 
 **Schema format** uses `neo4j-graphrag-python` native types (not custom dicts):
 
@@ -340,9 +355,9 @@ GraphSchema(
 
 ```
 ExecuteExtract mutation
-  --> Extractor.extract(partition_key, text, graph_schema?, schema_name?)
-    --> Config.get_graph_rag_util(partition_key)         # scoped to tenant
-    --> SchemaResolver.resolve(text, graph_schema, schema_name)  # 5 modes
+  --> Extractor.extract(partition_key, text, graph_schema?)
+    --> Config.get_graph_rag_util(partition_key)         # scoped to tenant (active instance)
+    --> SchemaResolver.resolve(text, graph_schema)        # active schema or provided dict
     --> GraphRAGUtil.build_knowledge_graph(text, schema)  # SimpleKGPipeline
         --> on failure: EntityExtractor fallback
     --> insert_update_document(...)                        # DynamoDB metadata
@@ -351,7 +366,7 @@ ExecuteExtract mutation
 
 ### Sequence Diagram: Extraction Without Schema (Auto-Generate)
 
-When no `graph_schema` or `schema_name` is provided, the engine auto-generates a schema from the input text using LLM, saves it for reuse, and then extracts.
+When no `graph_schema` is provided and no active schema exists, the engine auto-generates a schema from the input text using LLM, saves it as the new active schema, and then extracts.
 
 ```mermaid
 sequenceDiagram
@@ -366,23 +381,27 @@ sequenceDiagram
     participant Neo4j as Tenant Neo4j
     participant DynamoDB
 
-    Client->>Mutation: executeExtract(partition_key, text)
+    Client->>Mutation: executeExtract(text)
     Mutation->>Extractor: extract(partition_key, text)
 
     Extractor->>Config: get_graph_rag_util(partition_key)
     Config->>Config: Neo4jConnectionManager.get_driver(partition_key)
+    Note over Config: Uses active Neo4j instance for partition
     Config-->>Extractor: GraphRAGUtil (tenant-scoped)
 
-    Extractor->>SchemaResolver: resolve(text, graph_schema=None, schema_name=None)
-    Note over SchemaResolver: No schema_name, no graph_schema<br/>→ Auto-generate mode
+    Extractor->>SchemaResolver: resolve(text, graph_schema=None)
+    Note over SchemaResolver: No graph_schema provided<br/>→ Try active schema
 
-    SchemaResolver->>DynamoDB: get_graph_schema(partition_key, "default")
-    DynamoDB-->>SchemaResolver: DoesNotExist
+    SchemaResolver->>DynamoDB: get_active_graph_schema(partition_key)
+    DynamoDB-->>SchemaResolver: DoesNotExist (no active schema)
+
+    Note over SchemaResolver: No active schema<br/>→ Auto-generate mode
 
     SchemaResolver->>LLM: SchemaFromTextExtractor.run(text)
     LLM-->>SchemaResolver: GraphSchema (auto-generated)
 
-    SchemaResolver->>DynamoDB: insert_update_graph_schema(schema_name="default", definition)
+    SchemaResolver->>DynamoDB: _deactivate_current_active_schema(partition_key)
+    SchemaResolver->>DynamoDB: save new GraphSchemaModel(status="active")
     SchemaResolver-->>Extractor: GraphSchema
 
     Extractor->>GraphRAGUtil: build_knowledge_graph(text, schema)
@@ -396,9 +415,9 @@ sequenceDiagram
     Mutation-->>Client: ExtractResultType
 ```
 
-### Sequence Diagram: Extraction With Schema
+### Sequence Diagram: Extraction With Schema (graph_schema dict)
 
-When a `graph_schema` dict or `schema_name` is provided, the engine resolves it directly without LLM auto-generation.
+When a `graph_schema` dict is provided, it becomes the new active schema (deactivating the old one) and is used for extraction.
 
 ```mermaid
 sequenceDiagram
@@ -413,18 +432,18 @@ sequenceDiagram
     participant Neo4j as Tenant Neo4j
     participant DynamoDB
 
-    Client->>Mutation: executeExtract(partition_key, text, schema_name="product_schema")
-    Mutation->>Extractor: extract(partition_key, text, schema_name="product_schema")
+    Client->>Mutation: executeExtract(text, graphSchema={...})
+    Mutation->>Extractor: extract(partition_key, text, graph_schema={...})
 
     Extractor->>Config: get_graph_rag_util(partition_key)
     Config-->>Extractor: GraphRAGUtil (tenant-scoped)
 
-    Extractor->>SchemaResolver: resolve(text, graph_schema=None, schema_name="product_schema")
-    Note over SchemaResolver: schema_name provided<br/>→ Saved schema mode
+    Extractor->>SchemaResolver: resolve(text, graph_schema={...})
+    Note over SchemaResolver: graph_schema dict provided<br/>→ Save as new active schema
 
-    SchemaResolver->>DynamoDB: get_graph_schema(partition_key, "product_schema")
-    DynamoDB-->>SchemaResolver: GraphSchemaModel (saved definition)
-    SchemaResolver->>SchemaResolver: dict_to_graph_schema(definition)
+    SchemaResolver->>SchemaResolver: _dict_to_graph_schema(graph_schema)
+    SchemaResolver->>DynamoDB: _deactivate_current_active_schema(partition_key)
+    SchemaResolver->>DynamoDB: save new GraphSchemaModel(status="active")
     SchemaResolver-->>Extractor: GraphSchema
 
     Extractor->>GraphRAGUtil: build_knowledge_graph(text, schema)
@@ -477,9 +496,9 @@ sequenceDiagram
         GraphRAGUtil->>Retriever: VectorRetriever(driver, index_name, embedder, neo4j_database)
         Retriever->>Neo4j: Vector similarity query
     else search_mode = "text2cypher"
-        SearchHandler->>SearchHandler: _load_neo4j_schema(partition_key, schema_name)
-        SearchHandler->>DynamoDB: get_graph_schema(partition_key, schema_name)
-        DynamoDB-->>SearchHandler: neo4j_schema_string
+        SearchHandler->>SearchHandler: _load_neo4j_schema(partition_key)
+        SearchHandler->>DynamoDB: get_active_graph_schema(partition_key)
+        DynamoDB-->>SearchHandler: neo4j_schema_string (from active schema)
         SearchHandler->>GraphRAGUtil: text2cypher_search(query_text, neo4j_schema, top_k)
         GraphRAGUtil->>Retriever: Text2CypherRetriever(driver, llm, neo4j_schema, neo4j_database)
         Retriever->>Neo4j: LLM-generated Cypher query
@@ -524,19 +543,20 @@ sequenceDiagram
     participant Neo4j as Tenant Neo4j
     participant DynamoDB
 
-    Client->>Query: rag(query_text, search_mode="vector", schema_name="default", top_k=5)
+    Client->>Query: rag(query_text, search_mode="vector", top_k=5)
     Query->>Resolver: resolve_rag(info, **kwargs)
-    Resolver->>RAGHandler: rag(partition_key, query_text, search_mode, schema_name, top_k)
+    Resolver->>RAGHandler: rag(partition_key, query_text, search_mode, top_k)
 
     RAGHandler->>Config: get_graph_rag_util(partition_key)
+    Note over Config: Uses active Neo4j instance for partition
     Config-->>RAGHandler: GraphRAGUtil (tenant-scoped)
 
     RAGHandler->>RAGHandler: _build_retriever(graph_rag, search_mode, index_name)
     Note over RAGHandler: Creates VectorRetriever or<br/>HybridRetriever with neo4j_database
 
-    RAGHandler->>RAGHandler: _load_schema_context(partition_key, schema_name)
-    RAGHandler->>DynamoDB: get_graph_schema(partition_key, "default")
-    DynamoDB-->>RAGHandler: neo4j_schema_string (graph context)
+    RAGHandler->>RAGHandler: _load_schema_context(partition_key)
+    RAGHandler->>DynamoDB: get_active_graph_schema(partition_key)
+    DynamoDB-->>RAGHandler: neo4j_schema_string (from active schema)
 
     RAGHandler->>GraphRAG: GraphRAG(llm, retriever)
     RAGHandler->>GraphRAG: search(query_text=schema_context + query_text, top_k)
@@ -600,15 +620,22 @@ sequenceDiagram
 | `vector_cypher` | `VectorCypherRetriever` | Vector search + custom Cypher traversal |
 | `hybrid` | `HybridRetriever` | Combined vector + fulltext search |
 
-**GraphQL interface** ([schema.py](../knowledge_graph_engine/schema.py#L112-L117)):
+**GraphQL interface** ([schema.py](../knowledge_graph_engine/handlers/schema.py)):
 
 ```graphql
 search(
   query_text: String!
-  search_type: String       # "vector" | "text2cypher" | "vector_cypher" | "hybrid"
-  schema_name: String       # Load tenant's schema for text2cypher
+  search_mode: String       # "vector" | "text2cypher" | "vector_cypher" | "hybrid"
+  index_name: String        # Vector index name (default: "vector")
+  retrieval_query: String   # Custom Cypher for vector_cypher mode
+  filters: JSONCamelCase    # Additional filters
+  top_k: Int                # Number of results
+  page: Int
+  limit: Int
 ): SearchResultType
 ```
+
+The active schema is automatically used for text2cypher mode — no `schema_name` parameter needed.
 
 **Backward compatibility**: `search_type` is mapped to `search_mode` in [search.py](../knowledge_graph_engine/queries/search.py#L22-L23) resolver.
 
@@ -617,9 +644,10 @@ search(
 `RAGHandler` ([rag_handler.py](../knowledge_graph_engine/handlers/rag_handler.py)) uses `GraphRAG` with configurable retriever:
 
 - Builds `VectorRetriever` or `HybridRetriever` based on `search_mode`
-- Loads schema context from DynamoDB to enrich RAG queries
+- Automatically loads the **active schema** context to enrich RAG queries
 - Supports custom prompt templates via `RagTemplate`
 - All retrievers use `neo4j_database=graph_rag.neo4j_database`
+- Uses the **active Neo4j instance** for the partition
 
 ### Search Result Types
 
@@ -646,10 +674,10 @@ class ExtractResultType(ObjectType):      # Extraction result
     result = JSONCamelCase
 ```
 
-### Known Gaps
+### ~~Known Gaps~~ RESOLVED
 
-1. **GraphQL search parameters incomplete** - `schema.py` exposes `search_type` and `schema_name`, but not `index_name`, `retrieval_query`, `top_k`, `filters` which `SearchHandler.search()` accepts
-2. **RAG GraphQL parameters incomplete** - missing `search_mode`, `index_name`, `top_k`, `prompt` parameters in the GraphQL `rag` field
+1. ~~**GraphQL search parameters incomplete**~~ **FIXED**: All parameters now exposed
+2. ~~**RAG GraphQL parameters incomplete**~~ **FIXED**: All parameters now exposed
 
 ---
 
@@ -671,7 +699,7 @@ When a new tenant needs Neo4j:
 def decommission_tenant(partition_key):
     Neo4jConnectionManager.close_driver(partition_key)     # Close cached driver
     # Stop/remove Docker container (optional)
-    delete_neo4j_instance(info, partition_key, "default")  # Remove registry entry
+    # Delete active neo4j instance record
     # Clean up DynamoDB records for this partition
 ```
 
@@ -748,7 +776,7 @@ def tenant_graph_rag(neo4j_driver):
 | Config & initialization | Yes | No | No | Needs validation |
 | Neo4jConnectionManager | Yes | Yes | No | Needs real Neo4j test |
 | PartitionManager | Yes | Yes | - | Ready |
-| SchemaResolver (5 modes) | Yes | Partial | No | Needs all modes tested |
+| SchemaResolver (active-only) | Yes | Partial | No | Needs all modes tested |
 | Extractor | Yes | Partial | No | Needs E2E validation |
 | GraphRAGUtil | Yes | Partial | No | Needs real Neo4j test |
 | CustomNeo4jWriter | Yes | No | No | Needs validation |
@@ -774,21 +802,21 @@ def tenant_graph_rag(neo4j_driver):
 
 2. **`models/request.py` line 35**: Still uses `is_similarity_search = BooleanAttribute(default=False)` instead of `search_mode`
 
-3. **`schema.py` search field**: Exposes only `search_type` and `schema_name`, missing `index_name`, `retrieval_query`, `filters`, `top_k`, `page`, `limit` parameters that `SearchHandler.search()` accepts
+3. ~~**`schema.py` search field**: Missing parameters~~ **FIXED**: All search/rag/extract parameters now aligned with handlers
 
-4. **`schema.py` rag field**: Exposes only `query_text` and `schema_name`, missing `search_mode`, `index_name`, `top_k`, `prompt` parameters that `RAGHandler.rag()` accepts
+4. ~~**`schema.py` rag field**: Missing parameters~~ **FIXED**: All RAG parameters now exposed
 
 5. **`ExtractResultType.result`**: Defined as `result = JSONCamelCase` (missing parentheses) - should be `result = Field(JSONCamelCase)` or `result = JSONCamelCase()`
 
-6. **`schema.py` neo4j_instance resolver**: Imports `get_neo4j_instance_type` from `..models.neo4j_instance` - relative import path is wrong (should be `from .models.` when called from schema.py context)
-
-### Contract Misalignment: GraphQL Schema vs Handler Parameters
+### GraphQL Schema vs Handler Parameters (Aligned)
 
 | Field | GraphQL Parameters | Handler Accepts |
 |-------|-------------------|-----------------|
-| `search` | `query_text, search_type, schema_name` | `query_text, search_mode, schema_name, index_name, retrieval_query, filters, top_k, page, limit` |
-| `rag` | `query_text, schema_name` | `query_text, search_mode, schema_name, index_name, top_k, prompt` |
-| `execute_extract` | `partition_key, text, graph_schema, schema_name` | `partition_key, text, graph_schema, schema_name, document_source, document_external_id` |
+| `search` | `query_text, search_mode, index_name, retrieval_query, filters, top_k, page, limit` | Same (active schema used automatically for text2cypher) |
+| `rag` | `query_text, search_mode, index_name, top_k, prompt` | Same (active schema context loaded automatically) |
+| `execute_extract` | `text, graph_schema, document_source, document_external_id` | Same (`partition_key` from context, active schema used when no `graph_schema`) |
+
+**Note**: `partition_key` is passed via `info.context` for all mutations — never as a client argument. `schema_name` is not exposed in extract/search/rag — the active schema is always used.
 
 ---
 
@@ -801,12 +829,12 @@ def tenant_graph_rag(neo4j_driver):
 - [ ] Fix `schema.py` neo4j_instance resolver import path
 - [ ] Update `RequestModel.is_similarity_search` to `search_mode`
 
-### 2. Align GraphQL Contract (High)
+### 2. ~~Align GraphQL Contract~~ DONE
 
-- [ ] Add missing search parameters to `schema.py` Query.search field
-- [ ] Add missing RAG parameters to `schema.py` Query.rag field
-- [ ] Add missing extract parameters to `ExecuteExtract.Arguments`
-- [ ] Verify `SearchResultItemType` fields match `SearchHandler._format_results()` output
+- [x] All search parameters aligned with `SearchHandler.search()`
+- [x] All RAG parameters aligned with `RAGHandler.rag()`
+- [x] Extract parameters aligned (removed `schema_name`, `partition_key` from context)
+- [x] Active-only pattern enforced: no `schema_name` in search/rag/extract
 
 ### 3. Integration Test Infrastructure (High)
 
@@ -868,10 +896,14 @@ def tenant_graph_rag(neo4j_driver):
 |------|----------|-----------|--------|
 | 2025-Q4 | Instance-per-tenant Neo4j | Label partitioning leaks schema via `db.labels()` | Active |
 | 2025-Q4 | neo4j-graphrag-python library | Standardized API for KG operations | Active |
-| 2025-Q4 | 5-mode schema resolution | Flexibility: auto, user, hybrid, saved, from-graph | Active |
+| 2025-Q4 | 5-mode schema resolution | Flexibility: auto, user, hybrid, saved, from-graph | Superseded |
+| 2026-03 | Active-only schema/instance pattern | Only one active schema and one active Neo4j instance per partition; auto-deactivation on insert/activate | Active |
+| 2026-03 | Remove `schema_name` from extract/search/RAG | Always use active schema; `schema_name` only for CRUD management | Active |
+| 2026-03 | Remove `partition_key` from mutation Arguments | `partition_key` passed via `info.context` only, never as client argument | Active |
+| 2026-03 | Daemon mode (FastAPI) | `engine.daemon()` starts uvicorn with JWT auth, matching `ai_mcp_daemon_engine` pattern | Active |
+| 2026-03 | schema.py moved to handlers/ | Aligns with project structure; all handler-related files under handlers/ | Active |
 | TBD | Neo4j provisioning strategy | Docker vs K8s vs managed | Pending |
 | TBD | Cache invalidation rules | Real query pattern validation needed | Pending |
-| TBD | `search_type` deprecation | Transition to `search_mode` naming | Pending |
 
 ---
 
@@ -894,4 +926,4 @@ def tenant_graph_rag(neo4j_driver):
 
 ---
 
-*Last Updated: 2026-03-25*
+*Last Updated: 2026-03-27*

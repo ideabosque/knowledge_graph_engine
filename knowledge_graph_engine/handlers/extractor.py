@@ -31,7 +31,6 @@ class Extractor:
                 - partition_key: Tenant partition key (required)
                 - text: Document text to extract from (required)
                 - graph_schema: Optional GraphSchema, dict, or "EXTRACTED"/"FREE"/"FROM_GRAPH"
-                - schema_name: Optional saved schema name to load/store
                 - document_source: Optional document source identifier
                 - document_external_id: Optional external document ID
 
@@ -41,7 +40,6 @@ class Extractor:
         partition_key = params.get("partition_key")
         text = params.get("text", "")
         graph_schema = params.get("graph_schema")
-        schema_name = params.get("schema_name")
         document_source = params.get("document_source", "unknown")
         document_external_id = params.get("document_external_id")
 
@@ -58,12 +56,11 @@ class Extractor:
         # Get tenant's GraphRAG utility
         graph_rag_util = Config.get_graph_rag_util(partition_key)
 
-        # Resolve schema (auto-generate, user-provided, or hybrid)
+        # Resolve schema (active schema, user-provided, or auto-generate)
         schema_resolver = SchemaResolver(graph_rag_util, partition_key)
         resolved_schema = schema_resolver.resolve(
             text=text,
             graph_schema=graph_schema,
-            schema_name=schema_name,
         )
 
         # Extract entities and relationships using SimpleKGPipeline
@@ -142,7 +139,7 @@ class Extractor:
             "status": "success",
             "partition_key": partition_key,
             "document_uuid": document_uuid,
-            "schema_name": schema_name or "default",
+            "schema_name": "active",
             "entities_extracted": entities_count,
             "relationships_extracted": relationships_count,
             "result": extraction_result,

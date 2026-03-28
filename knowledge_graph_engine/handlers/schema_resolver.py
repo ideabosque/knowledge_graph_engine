@@ -25,9 +25,10 @@ from neo4j_graphrag.experimental.components.schema import (
 class SchemaResolver:
     """
     Resolves graph schema for a partition. Priority order:
-    1. schema_name provided → load GraphSchema from DynamoDB
-    2. graph_schema dict provided → convert to GraphSchema via SchemaBuilder
-    3. Neither provided → SchemaFromTextExtractor auto-generates, saves as "default"
+    1. graph_schema dict provided → save as new active schema (deactivates old), use it
+    2. graph_schema string ("EXTRACTED"/"FREE"/"FROM_GRAPH") → use directly
+    3. Active schema exists → use it
+    4. Neither → auto-generate from text, save as new active schema
 
     All methods use the exact neo4j-graphrag-python API.
     """
@@ -40,30 +41,21 @@ class SchemaResolver:
         self,
         text: str,
         graph_schema: Union[GraphSchema, dict, str, None] = None,
-        schema_name: Optional[str] = None,
     ) -> Union[GraphSchema, str]:
         """
         Returns a value suitable for SimpleKGPipeline's `schema` parameter:
         either a GraphSchema object, or "EXTRACTED"/"FREE" string.
+
+        Always uses the active schema for the partition when no graph_schema is provided.
         """
-        if schema_name and graph_schema is None:
-            saved = self._load_saved_schema(schema_name)
-            if saved:
-                return saved
-            return self._auto_generate_and_save(text, schema_name)
-
-        if schema_name and isinstance(graph_schema, dict) and graph_schema.get("auto_extend"):
-            saved = self._load_saved_schema(schema_name)
-            base = saved if saved else self._dict_to_graph_schema(graph_schema)
-            return self._hybrid_schema(text, base)
-
         if isinstance(graph_schema, dict):
             if graph_schema.get("auto_extend"):
                 base = self._dict_to_graph_schema(graph_schema)
-                return self._hybrid_schema(text, base)
+                merged = self._hybrid_schema(text, base)
+                self._save_as_active(merged, "auto")
+                return merged
             gs = self._dict_to_graph_schema(graph_schema)
-            if schema_name:
-                self._save_schema(schema_name, gs, "user")
+            self._save_as_active(gs, "user")
             return gs
 
         if isinstance(graph_schema, str):
@@ -73,25 +65,29 @@ class SchemaResolver:
                 return graph_schema
             raise ValueError(f"Unknown schema string: {graph_schema}")
 
-        return self._auto_generate_and_save(text, schema_name or "default")
+        # No graph_schema provided: use active schema, or auto-generate and save as active
+        active = self._load_active_schema()
+        if active:
+            return active
+        return self._auto_generate_and_save(text)
 
-    def _load_saved_schema(self, schema_name: str) -> Optional[GraphSchema]:
-        """Load a saved GraphSchema from DynamoDB for this partition."""
-        from ..models.graph_schema import get_graph_schema
+    def _load_active_schema(self) -> Optional[GraphSchema]:
+        """Load the active GraphSchema for this partition."""
+        from ..models.graph_schema import get_active_graph_schema
 
         try:
-            record = get_graph_schema(self.partition_key, schema_name)
+            record = get_active_graph_schema(self.partition_key)
             if record and record.schema_definition:
                 return GraphSchema.from_dict(dict(record.schema_definition))
         except Exception:
             pass
         return None
 
-    def _auto_generate_and_save(self, text: str, schema_name: str) -> GraphSchema:
-        """Use SchemaFromTextExtractor to auto-generate GraphSchema from text."""
+    def _auto_generate_and_save(self, text: str) -> GraphSchema:
+        """Use SchemaFromTextExtractor to auto-generate GraphSchema from text, save as active."""
         extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
         schema: GraphSchema = asyncio.get_event_loop().run_until_complete(extractor.run(text=text))
-        self._save_schema(schema_name, schema, "auto")
+        self._save_as_active(schema, "auto")
         return schema
 
     def _extract_from_existing_graph(self) -> GraphSchema:
@@ -201,34 +197,29 @@ class SchemaResolver:
             return [SchemaResolver._sanitize_for_dynamodb(i) for i in obj]
         return obj
 
-    def _save_schema(self, schema_name: str, schema: GraphSchema, schema_type: str):
-        """Persist GraphSchema to DynamoDB for future reuse."""
+    def _save_as_active(self, schema: GraphSchema, schema_type: str):
+        """Save schema as the new active schema, deactivating any existing active one."""
         import pendulum
-        from ..models.graph_schema import GraphSchemaModel
+        from ..models.graph_schema import GraphSchemaModel, _deactivate_current_active_schema
 
         now = pendulum.now("UTC")
         neo4j_schema_string = self._build_neo4j_schema_string(schema)
         definition = self._sanitize_for_dynamodb(schema.model_dump())
+        schema_name = f"{schema_type}_{now.format('YYYYMMDDHHmmss')}"
 
-        try:
-            existing = GraphSchemaModel.get(self.partition_key, schema_name)
-            existing.update(actions=[
-                GraphSchemaModel.schema_type.set(schema_type),
-                GraphSchemaModel.schema_definition.set(definition),
-                GraphSchemaModel.neo4j_schema_string.set(neo4j_schema_string),
-                GraphSchemaModel.updated_at.set(now),
-            ])
-        except GraphSchemaModel.DoesNotExist:
-            GraphSchemaModel(
-                self.partition_key,
-                schema_name,
-                schema_type=schema_type,
-                schema_definition=definition,
-                neo4j_schema_string=neo4j_schema_string,
-                status="active",
-                created_at=now,
-                updated_at=now,
-            ).save()
+        # Deactivate the current active schema first
+        _deactivate_current_active_schema(self.partition_key)
+
+        GraphSchemaModel(
+            self.partition_key,
+            schema_name,
+            schema_type=schema_type,
+            schema_definition=definition,
+            neo4j_schema_string=neo4j_schema_string,
+            status="active",
+            created_at=now,
+            updated_at=now,
+        ).save()
 
     def _build_neo4j_schema_string(self, schema: GraphSchema) -> str:
         """
