@@ -52,15 +52,23 @@ class Neo4jConnectionManager:
     @classmethod
     def close_driver(cls, partition_key: str) -> None:
         """Close and remove a tenant's driver (e.g., on decommission)."""
+        from .config import Config
+
         with cls._lock:
             driver = cls._drivers.pop(partition_key, None)
             if driver:
                 driver.close()
+        Config.clear_graph_rag_util(partition_key)
 
     @classmethod
     def close_all(cls) -> None:
         """Graceful shutdown: close all drivers."""
+        from .config import Config
+
         with cls._lock:
+            partition_keys = list(cls._drivers.keys())
             for driver in cls._drivers.values():
                 driver.close()
             cls._drivers.clear()
+        for pk in partition_keys:
+            Config.clear_graph_rag_util(pk)

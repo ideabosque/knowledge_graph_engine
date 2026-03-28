@@ -98,6 +98,8 @@ python -m knowledge_graph_engine
 
 The daemon exposes:
 - `POST /{endpoint_id}/knowledge_graph_engine_graphql` — GraphQL endpoint (requires JWT token, `Part-Id` header)
+- `POST /{endpoint_id}/extract` — Background extraction (returns `task_id` immediately, for batch pipelines)
+- `GET /{endpoint_id}/extract/{task_id}` — Poll extraction status (`pending` → `running` → `completed`/`failed`)
 - `POST /auth/token` — Get JWT token (`username` + `password` form data)
 - `GET /me` — Current user info (requires JWT token)
 - `GET /health` — Health check (no auth required)
@@ -116,6 +118,15 @@ Supported values:
 ### Extraction Contract
 
 `Extractor.extract()` requires an explicit `partition_key` argument. The active schema for the partition is used automatically. If a `graph_schema` dict is provided, it becomes the new active schema (the old active one is deactivated).
+
+Two extraction modes are available in daemon mode:
+
+| Mode | Endpoint | Behavior |
+|---|---|---|
+| **Synchronous** | `executeExtract` GraphQL mutation | Runs in thread pool, returns result when done |
+| **Background** | `POST /{endpoint_id}/extract` | Returns `task_id` immediately, poll for result |
+
+Background extraction is designed for batch pipelines (Dagster, Airflow) where HTTP timeouts are a concern. Concurrency is controlled by `KGE_EXTRACT_WORKERS` (default: 4).
 
 ### Active-Only Pattern
 
@@ -149,6 +160,7 @@ settings = {
 ```bash
 # Server
 PORT=8000
+KGE_EXTRACT_WORKERS=4           # Concurrent background extraction threads (tune for LLM rate limits)
 
 # Auth
 AUTH_PROVIDER=local              # "local" or "cognito"
@@ -170,12 +182,15 @@ LOCAL_USER_FILE=/path/to/users.json
 ## Development Notes
 
 - The package uses lazy top-level imports so helper modules can be imported without forcing the full runtime dependency stack.
-- A lightweight compatibility layer allows the package and unit tests to run in minimal environments where optional graph dependencies are not installed.
+- A lightweight compatibility layer (`_compat.py`) allows the package and unit tests to run in minimal environments. It stubs `neo4j`, `neo4j-graphrag`, `silvaengine_dynamodb_base`, and `silvaengine_utility` (including the `Graphql` base class).
 - The GraphQL search and RAG resolvers normalize `search_type` into `search_mode` to preserve backward compatibility.
 - `partition_key` is never accepted as a client argument in mutations — it is always derived from `info.context`.
 - `schema_name` is not exposed in extract, search, or RAG operations — the active schema is always used.
 - When a `graph_schema` dict is provided in `executeExtract`, it is saved as the new active schema (deactivating the old one).
 - The `daemon()` method follows the `ai_mcp_daemon_engine` pattern: starts uvicorn with JWT middleware and auth router.
+- The GraphQL endpoint runs synchronous operations in a `ThreadPoolExecutor` to avoid blocking FastAPI's async event loop.
+- `GraphRAGUtil` instances are cached per partition in `Config._graph_rag_utils` and invalidated when the active Neo4j instance changes.
+- When multiple active records exist for a partition (data inconsistency), `get_active_neo4j_instance` / `get_active_graph_schema` choose the most recently updated one and log a warning.
 
 ## Testing
 

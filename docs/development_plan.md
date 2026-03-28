@@ -190,16 +190,18 @@ knowledge_graph_engine/
 | Config singleton | Thread-safe, lazy init, AWS services, cache config | [config.py](../knowledge_graph_engine/handlers/config.py) |
 | Connection manager | `Neo4jConnectionManager` with per-tenant driver cache, uses active instance | [neo4j_connection_manager.py](../knowledge_graph_engine/handlers/neo4j_connection_manager.py) |
 | Partition manager | `build_partition_key()`, `parse_partition_key()` | [partition_manager.py](../knowledge_graph_engine/handlers/partition_manager.py) |
-| Compatibility layer | Stub modules for `neo4j` and `neo4j-graphrag` | [_compat.py](../knowledge_graph_engine/_compat.py) |
+| Compatibility layer | Stub modules for `neo4j`, `neo4j-graphrag`, `silvaengine_dynamodb_base`, `silvaengine_utility` (including `Graphql`) | [_compat.py](../knowledge_graph_engine/_compat.py) |
 | GraphQL schema | `type_class()`, `Query`, `Mutations`, `build_graphql_schema()` | [schema.py](../knowledge_graph_engine/handlers/schema.py) |
-| FastAPI app | FastAPI app for daemon mode with auth middleware | [fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py) |
+| FastAPI app | FastAPI app with thread-pool execution, background extract endpoint | [fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py) |
 | Auth router | JWT login/me endpoints (local + Cognito) | [auth_router.py](../knowledge_graph_engine/handlers/auth_router.py) |
 
 **Key design decisions**:
 
 - `partition_key` is enforced as required tenant boundary in `_apply_partition_defaults()` - raises `ValueError` if `endpoint_id` or `part_id` are missing
 - `Config.get_graph_rag_util(partition_key)` is the single factory method: loads driver via `Neo4jConnectionManager`, reads `neo4j_database` from instance registry, returns scoped `GraphRAGUtil`
-- `_compat.py` provides comprehensive stub modules so the package imports cleanly without `neo4j`/`neo4j-graphrag` installed (enables testing and lightweight deployments)
+- `_compat.py` provides comprehensive stub modules so the package imports cleanly without `neo4j`/`neo4j-graphrag`/`silvaengine_dynamodb_base`/`silvaengine_utility` installed (enables testing and lightweight deployments). The `Graphql` base class stub supports `main.py`'s `KnowledgeGraphEngine(Graphql)` inheritance.
+- `Config.get_graph_rag_util(partition_key)` caches `GraphRAGUtil` instances per partition. Cache is invalidated via `clear_graph_rag_util()` when the active Neo4j instance changes.
+- `Config.reset()` supports re-initialization with different settings (e.g. test isolation). Closes all Neo4j drivers and clears cached utilities.
 
 ---
 
@@ -272,13 +274,14 @@ def delete_document(info, **kwargs):
 
 ```python
 # Config.CACHE_ENTITY_CONFIG maps each entity to its module, getter, and cache keys
-# Config.CACHE_RELATIONSHIPS defines cascading purge dependencies:
+# list_resolver paths point to model modules (not queries/) for neo4j_instance and request
+# Config.CACHE_RELATIONSHIPS defines cascading purge dependencies (plain strings):
 CACHE_RELATIONSHIPS = {
     "document": ["request"],
     "graph_schema": ["document"],
-    "data_source": ["document", "graph_schema"],
     "neo4j_instance": [],
 }
+# CascadingCachePurger handles both string and dict entries in the children list
 ```
 
 ---
@@ -353,6 +356,15 @@ GraphSchema(
 
 ### Extraction Flow
 
+Two entry points are available:
+
+| Entry Point | Mode | Use Case |
+|---|---|---|
+| `executeExtract` GraphQL mutation | Synchronous (runs in thread pool) | Single document, waits for result |
+| `POST /{endpoint_id}/extract` REST | Background (fire-and-forget) | Batch pipelines (Dagster, Airflow) |
+
+**Synchronous flow (GraphQL)**:
+
 ```
 ExecuteExtract mutation
   --> Extractor.extract(partition_key, text, graph_schema?)
@@ -363,6 +375,20 @@ ExecuteExtract mutation
     --> insert_update_document(...)                        # DynamoDB metadata
     --> return {status, document_uuid, entities_extracted, relationships_extracted}
 ```
+
+**Background flow (REST)**:
+
+```
+POST /{endpoint_id}/extract  {text, graph_schema?, document_source?, document_external_id?}
+  --> Returns immediately: {task_id, status: "pending"}
+  --> ThreadPoolExecutor runs Extractor.extract() in background
+  --> Poll: GET /{endpoint_id}/extract/{task_id}
+      --> {status: "running", elapsed_seconds: 45.2}
+      --> {status: "completed", result: {...}}
+      --> {status: "failed", error: "..."}
+```
+
+Worker concurrency is controlled by `KGE_EXTRACT_WORKERS` env var (default: 4). Tune based on LLM API rate limits — the LLM is the bottleneck, not compute.
 
 ### Sequence Diagram: Extraction Without Schema (Auto-Generate)
 
@@ -601,7 +627,7 @@ sequenceDiagram
 ### Known Gaps
 
 1. **Extraction not validated end-to-end** - pipeline logic exists but no integration test confirms actual Neo4j writes
-2. **Async event loop handling** - `build_knowledge_graph()` uses `get_event_loop()` which can conflict in nested async contexts
+2. ~~**Async event loop handling**~~ **FIXED**: `nest_asyncio.apply()` + `_run_async()` helper handles nested event loops. `_SuppressEventLoopClosedFilter` suppresses harmless httpx cleanup noise. GraphQL handler runs in `ThreadPoolExecutor` to avoid blocking FastAPI's event loop.
 
 ---
 
@@ -732,6 +758,8 @@ def decommission_tenant(partition_key):
 | [test_extract.py](../tests/test_extract.py) | Extractor init, validation, SchemaResolver dict conversion, PartitionManager, ConnectionManager cache | Unit |
 | [test_search.py](../tests/test_search.py) | Vector search resolution, RAG resolution (mocked) | Unit |
 | [test_helpers.py](../tests/test_helpers.py) | Normalization (Decimal, dict, None), listener info, CSV parsing | Unit |
+| [test_import.py](../tests/test_import.py) | Package import, engine class, deploy, partition manager, config, lazy model imports, handler imports (12 tests) | Smoke |
+| [test_module_hardening.py](../tests/test_module_hardening.py) | Filter composition, listener context flattening, active-record tiebreaker, request UUID generation, config reinit (7 tests) | Unit |
 
 ### Missing Test Coverage
 
@@ -800,13 +828,23 @@ def tenant_graph_rag(neo4j_driver):
        return resolve_document_list(info, **kwargs)  # calls itself!
    ```
 
-2. **`models/request.py` line 35**: Still uses `is_similarity_search = BooleanAttribute(default=False)` instead of `search_mode`
+2. ~~**`models/request.py`**: Still uses `is_similarity_search`~~ **FIXED**: Uses `search_mode`. Auto-generates `request_uuid` when not provided.
 
 3. ~~**`schema.py` search field**: Missing parameters~~ **FIXED**: All search/rag/extract parameters now aligned with handlers
 
 4. ~~**`schema.py` rag field**: Missing parameters~~ **FIXED**: All RAG parameters now exposed
 
 5. **`ExtractResultType.result`**: Defined as `result = JSONCamelCase` (missing parentheses) - should be `result = Field(JSONCamelCase)` or `result = JSONCamelCase()`
+
+6. ~~**Filter bug in list resolvers**~~ **FIXED**: `the_filters &= status_filter` crashed when `the_filters` was `None`. All list resolvers (document, graph_schema, neo4j_instance, request) now use safe composition: `the_filters = status_filter if the_filters is None else the_filters & status_filter`.
+
+7. ~~**`resolve_graph_schema` missing type conversion**~~ **FIXED**: Now wraps with `get_graph_schema_type()`, consistent with all other single-entity resolvers.
+
+8. ~~**`CACHE_ENTITY_CONFIG` bad resolver paths**~~ **FIXED**: `neo4j_instance` and `request` list_resolver paths now point to `models/` (where the resolvers live), not `queries/`.
+
+9. ~~**`CACHE_RELATIONSHIPS` crash in purge loop**~~ **FIXED**: `CascadingCachePurger` now handles both plain strings and dicts in the children list.
+
+10. ~~**`OllamaEmbeddings` crash when unavailable**~~ **FIXED**: Raises clear `ValueError` with install instructions when `embedding_provider="ollama"` but the import failed.
 
 ### GraphQL Schema vs Handler Parameters (Aligned)
 
@@ -902,6 +940,11 @@ def tenant_graph_rag(neo4j_driver):
 | 2026-03 | Remove `partition_key` from mutation Arguments | `partition_key` passed via `info.context` only, never as client argument | Active |
 | 2026-03 | Daemon mode (FastAPI) | `engine.daemon()` starts uvicorn with JWT auth, matching `ai_mcp_daemon_engine` pattern | Active |
 | 2026-03 | schema.py moved to handlers/ | Aligns with project structure; all handler-related files under handlers/ | Active |
+| 2026-03 | Background extract endpoint | `POST /{endpoint_id}/extract` with `ThreadPoolExecutor` for batch pipelines (Dagster). Solves HTTP read timeout issue. `KGE_EXTRACT_WORKERS` env var controls concurrency. | Active |
+| 2026-03 | GraphQL handler runs in thread pool | `run_in_executor` prevents sync extraction from blocking FastAPI event loop | Active |
+| 2026-03 | GraphRAGUtil caching per partition | `Config._graph_rag_utils` cache with invalidation via `clear_graph_rag_util()` on driver close | Active |
+| 2026-03 | Full compatibility shim layer | `_compat.py` stubs for `neo4j`, `neo4j-graphrag`, `silvaengine_dynamodb_base`, `silvaengine_utility` (including `Graphql` base class) | Active |
+| 2026-03 | Multi-active tiebreaker | When multiple active records exist, `get_active_*` chooses the most recently updated one and logs a warning | Active |
 | TBD | Neo4j provisioning strategy | Docker vs K8s vs managed | Pending |
 | TBD | Cache invalidation rules | Real query pattern validation needed | Pending |
 
@@ -926,4 +969,4 @@ def tenant_graph_rag(neo4j_driver):
 
 ---
 
-*Last Updated: 2026-03-27*
+*Last Updated: 2026-03-28*

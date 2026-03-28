@@ -290,3 +290,146 @@ def ensure_neo4j_graphrag_compat() -> None:
     }
 
     sys.modules.update(modules)
+
+
+def ensure_silvaengine_dynamodb_base_compat() -> None:
+    try:
+        module = __import__("silvaengine_dynamodb_base")
+        required = [
+            "BaseModel",
+            "ListObjectType",
+            "delete_decorator",
+            "insert_update_decorator",
+            "resolve_list_decorator",
+        ]
+        if all(hasattr(module, name) for name in required):
+            return
+    except ImportError:
+        module = types.ModuleType("silvaengine_dynamodb_base")
+
+    try:
+        from graphene import ObjectType
+    except Exception:
+        class ObjectType:
+            pass
+
+    class _BaseMeta:
+        table_name = ""
+
+    class BaseModel:
+        class Meta(_BaseMeta):
+            pass
+
+        class DoesNotExist(Exception):
+            pass
+
+        def __init__(self, *args, **kwargs):
+            self.attribute_values = kwargs
+
+        @classmethod
+        def get(cls, *args, **kwargs):
+            raise cls.DoesNotExist()
+
+        @classmethod
+        def count(cls, *args, **kwargs):
+            return 0
+
+        @classmethod
+        def query(cls, *args, **kwargs):
+            return []
+
+        @classmethod
+        def scan(cls, *args, **kwargs):
+            return []
+
+        @classmethod
+        def exists(cls):
+            return True
+
+        @classmethod
+        def create_table(cls, *args, **kwargs):
+            return None
+
+        def save(self):
+            return None
+
+        def update(self, *args, **kwargs):
+            return None
+
+        def delete(self):
+            return None
+
+    class ListObjectType(ObjectType):
+        pass
+
+    def _identity_decorator(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    module.BaseModel = getattr(module, "BaseModel", BaseModel)
+    module.ListObjectType = getattr(module, "ListObjectType", ListObjectType)
+    module.delete_decorator = getattr(module, "delete_decorator", _identity_decorator)
+    module.insert_update_decorator = getattr(
+        module, "insert_update_decorator", _identity_decorator
+    )
+    module.resolve_list_decorator = getattr(
+        module, "resolve_list_decorator", _identity_decorator
+    )
+    sys.modules["silvaengine_dynamodb_base"] = module
+
+
+def ensure_silvaengine_utility_compat() -> None:
+    required = ["method_cache", "JSONCamelCase", "Graphql"]
+    try:
+        module = __import__("silvaengine_utility")
+        if all(hasattr(module, name) for name in required):
+            return
+    except ImportError:
+        module = types.ModuleType("silvaengine_utility")
+
+    def _identity_cache(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    if not hasattr(module, "method_cache"):
+        module.method_cache = _identity_cache
+
+    if not hasattr(module, "JSONCamelCase"):
+        try:
+            from graphene.types.generic import GenericScalar
+
+            module.JSONCamelCase = GenericScalar
+        except Exception:
+            class JSONCamelCase:
+                pass
+
+            module.JSONCamelCase = JSONCamelCase
+
+    if not hasattr(module, "Graphql"):
+
+        class Graphql:
+            """Minimal stub for silvaengine_utility.Graphql base class."""
+
+            def __init__(self, logger, **setting):
+                self.logger = logger
+                self.setting = setting
+
+            def execute(self, schema, **params):
+                from graphene import Schema
+
+                query = params.get("query", "")
+                variables = params.get("variables")
+                context = params.get("context", {})
+                result = schema.execute(
+                    query, variables=variables, context_value=context
+                )
+                return {
+                    "data": result.data,
+                    "errors": [str(e) for e in result.errors] if result.errors else [],
+                }
+
+        module.Graphql = Graphql
+
+    sys.modules["silvaengine_utility"] = module

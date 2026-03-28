@@ -42,6 +42,7 @@ class Config:
     _logger: Optional[logging.Logger] = None
     _setting: Dict[str, Any] = {}
     _USERS: Dict[str, LocalUser] = {}
+    _graph_rag_utils: Dict[str, Any] = {}
 
     # KnowledgeGraphEngine instance (set by fastapi entry point)
     kge: Any = None
@@ -91,14 +92,14 @@ class Config:
             "module": "knowledge_graph_engine.models.neo4j_instance",
             "model_class": "Neo4jInstanceModel",
             "getter": "get_neo4j_instance",
-            "list_resolver": "knowledge_graph_engine.queries.neo4j_instance.resolve_neo4j_instance_list",
+            "list_resolver": "knowledge_graph_engine.models.neo4j_instance.resolve_neo4j_instance_list",
             "cache_keys": ["context:partition_key", "key:instance_id"],
         },
         "request": {
             "module": "knowledge_graph_engine.models.request",
             "model_class": "RequestModel",
             "getter": "get_request",
-            "list_resolver": "knowledge_graph_engine.queries.request.resolve_request_list",
+            "list_resolver": "knowledge_graph_engine.models.request.resolve_request_list",
             "cache_keys": ["context:partition_key", "key:request_uuid"],
         },
     }
@@ -117,26 +118,58 @@ class Config:
     def initialize(cls, logger: logging.Logger, setting: Dict[str, Any]) -> None:
         if not setting:
             raise RuntimeError("`setting` is required")
-        elif cls._initialized:
-            return
 
         with cls._lock:
-            if not cls._initialized:
-                try:
-                    cls._logger = logger
-                    cls._setting = setting
-                    cls._initialize_aws_services(setting)
-                    cls._initialize_auth(setting)
+            if cls._initialized and cls._setting == setting:
+                cls._logger = logger
+                return
 
-                    if setting.get("initialize_tables"):
-                        cls._initialize_tables(logger)
+            try:
+                if cls._initialized:
+                    cls.reset()
 
-                    cls._initialized = True
-                except Exception as e:
-                    sys.stderr.write(f"Config Initialize Error: {e}\n")
-                    traceback.print_exc(file=sys.stderr)
-                    logger.exception("Failed to initialize configuration.")
-                    raise e
+                cls._logger = logger
+                cls._setting = dict(setting)
+                cls._initialize_aws_services(setting)
+                cls._initialize_auth(setting)
+
+                if setting.get("initialize_tables"):
+                    cls._initialize_tables(logger)
+
+                cls._initialized = True
+            except Exception as e:
+                sys.stderr.write(f"Config Initialize Error: {e}\n")
+                traceback.print_exc(file=sys.stderr)
+                logger.exception("Failed to initialize configuration.")
+                raise e
+
+    @classmethod
+    def reset(cls) -> None:
+        with cls._lock:
+            from .neo4j_connection_manager import Neo4jConnectionManager
+
+            Neo4jConnectionManager.close_all()
+            cls._initialized = False
+            cls._logger = None
+            cls._setting = {}
+            cls._USERS = {}
+            cls.kge = None
+            cls.auth_provider = "local"
+            cls.jwt_secret_key = "CHANGEME"
+            cls.jwt_algorithm = "HS256"
+            cls.access_token_exp = 15
+            cls.admin_username = ""
+            cls.admin_password = ""
+            cls.admin_static_token = ""
+            cls.cognito_user_pool_id = ""
+            cls.cognito_app_client_id = ""
+            cls.cognito_app_secret = ""
+            cls.jwks_endpoint = ""
+            cls.jwks_cache_ttl = 3600
+            cls.issuer = ""
+            cls.aws_cognito_idp = None
+            if hasattr(cls, "aws_lambda"):
+                cls.aws_lambda = None
 
     @classmethod
     def _initialize_aws_services(cls, setting: Dict[str, Any]) -> None:
@@ -259,15 +292,27 @@ class Config:
         from ..utils.graph_rag_util import GraphRAGUtil
         from ..models.neo4j_instance import get_active_neo4j_instance
 
-        driver = Neo4jConnectionManager.get_driver(partition_key)
-        try:
-            instance = get_active_neo4j_instance(partition_key)
-            database = instance.neo4j_database or "neo4j"
-        except Exception:
-            database = "neo4j"
+        with cls._lock:
+            cached = cls._graph_rag_utils.get(partition_key)
+            if cached is not None:
+                return cached
 
-        return GraphRAGUtil(
-            driver=driver,
-            neo4j_database=database,
-            settings=cls._setting,
-        )
+            driver = Neo4jConnectionManager.get_driver(partition_key)
+            try:
+                instance = get_active_neo4j_instance(partition_key)
+                database = instance.neo4j_database or "neo4j"
+            except Exception:
+                database = "neo4j"
+
+            graph_rag = GraphRAGUtil(
+                driver=driver,
+                neo4j_database=database,
+                settings=cls._setting,
+            )
+            cls._graph_rag_utils[partition_key] = graph_rag
+            return graph_rag
+
+    @classmethod
+    def clear_graph_rag_util(cls, partition_key: str) -> None:
+        with cls._lock:
+            cls._graph_rag_utils.pop(partition_key, None)

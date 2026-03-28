@@ -7,9 +7,13 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Union
 
-import nest_asyncio
+try:
+    import nest_asyncio
+except ImportError:  # pragma: no cover
+    nest_asyncio = None
 
-nest_asyncio.apply()
+if nest_asyncio is not None:  # pragma: no branch
+    nest_asyncio.apply()
 
 logger = logging.getLogger(__name__)
 

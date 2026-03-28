@@ -7,9 +7,13 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-import nest_asyncio
+try:
+    import nest_asyncio
+except ImportError:  # pragma: no cover
+    nest_asyncio = None
 
-nest_asyncio.apply()
+if nest_asyncio is not None:  # pragma: no branch
+    nest_asyncio.apply()
 
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 from neo4j_graphrag.experimental.components.schema import (
@@ -155,6 +159,11 @@ class GraphRAGUtil:
         embedding_model = self.settings.get("embedding_model", "text-embedding-3-small")
 
         if embedding_provider == "ollama":
+            if OllamaEmbeddings is None:
+                raise ValueError(
+                    "embedding_provider='ollama' requires neo4j-graphrag[ollama] extras. "
+                    "Install with: pip install 'neo4j-graphrag[ollama]'"
+                )
             self.embedder = OllamaEmbeddings(
                 model=embedding_model,
                 host=self.settings.get("ollama_host", "http://localhost:11434"),
