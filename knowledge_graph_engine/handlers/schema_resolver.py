@@ -53,17 +53,19 @@ from neo4j_graphrag.experimental.components.schema import (
 
 class SchemaResolver:
     """
-    Resolves graph schema for a partition with automatic schema evolution.
+    Resolves graph schema for extraction and evolves it post-extraction.
 
-    Priority order:
-    1. graph_schema dict provided → save as new active schema (deactivates old), use it
-    2. graph_schema string ("EXTRACTED"/"FREE"/"FROM_GRAPH") → use directly
-    3. Active schema exists → verify it covers the text:
-       a. If it covers the text → reuse as-is (no save)
-       b. If new types discovered → merge into active schema, save as new version
-    4. No active schema → auto-generate from text, save as new active schema
+    Resolution (before extraction):
+    1. graph_schema dict provided → save as new active, use it
+    2. graph_schema string ("EXTRACTED"/"FREE"/"FROM_GRAPH") → pass to pipeline
+    3. Active schema exists → use it as-is
+    4. No active schema → fall back to "EXTRACTED" (let pipeline decide)
 
-    All methods use the exact neo4j-graphrag-python API.
+    Evolution (after extraction):
+    - Read actual labels/types from the graph via SchemaFromExistingGraphExtractor
+    - Compare against the active schema definition
+    - If new types found → build new version on top of the old one
+    - New version is always a superset of the previous version
     """
 
     def __init__(self, graph_rag_util, partition_key: str):
@@ -76,12 +78,14 @@ class SchemaResolver:
         graph_schema: Union[GraphSchema, dict, str, None] = None,
     ) -> Union[GraphSchema, str]:
         """
-        Returns a value suitable for SimpleKGPipeline's `schema` parameter:
-        either a GraphSchema object, or "EXTRACTED"/"FREE" string.
+        Returns a value suitable for SimpleKGPipeline's `schema` parameter.
 
-        When no graph_schema is provided, uses the active schema. If the active
-        schema doesn't cover the entity types in the text, it evolves the schema
-        by merging new types and saving a new version.
+        When an active schema exists, uses a two-phase check:
+        - Phase 1 (free): check if any schema node labels appear in the text.
+          If yes, the schema likely covers this record → use it as-is.
+        - Phase 2 (LLM): if no labels match, ask the LLM to discover what types
+          the text needs. If new types found, merge them ON TOP of the active
+          schema (new version is always a superset). If no new types, reuse active.
         """
         if isinstance(graph_schema, dict):
             if graph_schema.get("auto_extend"):
@@ -100,42 +104,177 @@ class SchemaResolver:
                 return graph_schema
             raise ValueError(f"Unknown schema string: {graph_schema}")
 
-        # No graph_schema provided: use active schema with evolution check
+        # No graph_schema provided: use active schema with coverage check
         active = self._load_active_schema()
         if active:
-            return self._verify_and_evolve(text, active)
-        return self._auto_generate_and_save(text)
+            return self._check_and_evolve(text, active)
 
-    def _verify_and_evolve(self, text: str, active: GraphSchema) -> GraphSchema:
-        """
-        Check if the active schema covers the entity types in the text.
-        If yes, return the active schema as-is (no save, no LLM cost for most records).
-        If new types are discovered, merge them into the active schema and save a new version.
-        """
-        # Extract what the LLM thinks the text needs
-        discovered = self._discover_schema(text)
+        # No active schema exists — let SimpleKGPipeline extract freely.
+        # evolve_schema_from_graph() will capture the schema after extraction.
+        logger.info(
+            "No active schema for partition %s — using EXTRACTED mode. "
+            "Schema will be captured from the graph after extraction.",
+            self.partition_key,
+        )
+        return "EXTRACTED"
 
-        # Check coverage
+    def _check_and_evolve(self, text: str, active: GraphSchema) -> GraphSchema:
+        """
+        Two-phase schema coverage check.
+
+        Phase 1 (free, no LLM): Check if any of the active schema's node labels
+        appear in the text. If at least one matches, the schema likely covers this
+        record — return it as-is.
+
+        Phase 2 (LLM call): If no labels match, the text may contain entity types
+        the schema doesn't know about. Ask the LLM to discover types from the text.
+        If new types found, merge them ON TOP of the active schema and save a new
+        version. The new version is always a superset of the old one.
+        """
+        # Phase 1: cheap text-based check
+        node_labels = self._get_node_labels(active)
+        text_lower = text.lower()
+
+        matched = {label for label in node_labels if label.lower() in text_lower}
+
+        if matched:
+            logger.debug(
+                "Active schema covers text for partition %s (matched: %s) — reusing.",
+                self.partition_key,
+                ", ".join(sorted(matched)),
+            )
+            return active
+
+        # Phase 2: no label matched — ask LLM
+        logger.info(
+            "No schema labels matched text for partition %s — using LLM to check coverage.",
+            self.partition_key,
+        )
+        try:
+            discovered = self._discover_schema(text)
+        except Exception as e:
+            logger.warning(
+                "LLM schema discovery failed for partition %s: %s — reusing active schema.",
+                self.partition_key, e,
+            )
+            return active
+
         new_nodes, new_rels, new_patterns = self._find_new_types(active, discovered)
 
         if not new_nodes and not new_rels and not new_patterns:
             logger.debug(
-                "Active schema covers text for partition %s — reusing without save.",
+                "LLM confirmed active schema covers text for partition %s — no evolution needed.",
                 self.partition_key,
             )
             return active
 
-        # Schema evolution: merge new types into the active schema
+        # Build new version on top of the old one (superset)
+        merged = self._merge_schemas(active, discovered)
+        self._save_as_active(merged, "evolved")
         logger.info(
-            "Schema evolution for partition %s: +%d node types, +%d relationship types, +%d patterns",
+            "Schema evolved for partition %s: +%d node types, +%d relationship types, +%d patterns. "
+            "New version saved as active (superset of previous).",
+            self.partition_key,
+            len(new_nodes), len(new_rels), len(new_patterns),
+        )
+        return merged
+
+    def evolve_schema_from_graph(self, text: str = None) -> None:
+        """
+        Called after extraction. Reads the actual schema from the graph
+        and compares against the active schema definition.
+
+        - If no active schema → save the graph schema as the first active version.
+        - If active schema exists but graph has new types → build new version
+          on top of the old one (superset).
+        - If active schema already covers everything → no-op.
+
+        Falls back to LLM-based schema discovery when APOC is not available
+        (requires `text` to be provided).
+        """
+        # Read what's actually in the graph
+        graph_schema = None
+        try:
+            graph_schema = self._extract_from_existing_graph()
+        except Exception as e:
+            logger.warning(
+                "Could not read schema from graph for partition %s: %s. "
+                "Falling back to LLM-based schema discovery.",
+                self.partition_key, e,
+            )
+
+        # Fallback: use LLM to discover schema from the extracted text
+        if not graph_schema and text:
+            try:
+                graph_schema = self._discover_schema(text)
+            except Exception as e:
+                logger.warning(
+                    "LLM schema discovery also failed for partition %s: %s",
+                    self.partition_key, e,
+                )
+
+        if not graph_schema:
+            logger.debug("No schema extracted from graph — skipping evolution.")
+            return
+
+        active = self._load_active_schema()
+
+        if not active:
+            # First time: save graph schema as the initial active version
+            self._save_as_active(graph_schema, "captured")
+            logger.info(
+                "Captured initial schema from graph for partition %s — saved as active.",
+                self.partition_key,
+            )
+            return
+
+        # Compare: does the active schema already cover what's in the graph?
+        new_nodes, new_rels, new_patterns = self._find_new_types(active, graph_schema)
+
+        if not new_nodes and not new_rels and not new_patterns:
+            logger.debug(
+                "Active schema already covers graph for partition %s — no evolution needed.",
+                self.partition_key,
+            )
+            return
+
+        # Build new version on top of the old one
+        merged = self._merge_schemas(active, graph_schema)
+        self._save_as_active(merged, "evolved")
+        logger.info(
+            "Schema evolved for partition %s: +%d node types, +%d relationship types, +%d patterns. "
+            "New version saved as active (superset of previous).",
             self.partition_key,
             len(new_nodes),
             len(new_rels),
             len(new_patterns),
         )
-        merged = self._merge_schemas(active, discovered)
-        self._save_as_active(merged, "evolved")
-        return merged
+
+    def _load_active_schema(self) -> Optional[GraphSchema]:
+        """Load the active GraphSchema for this partition."""
+        from ..models.graph_schema import get_active_graph_schema
+
+        try:
+            record = get_active_graph_schema(self.partition_key)
+            if record and record.schema_definition:
+                raw = record.schema_definition.as_dict() if hasattr(record.schema_definition, 'as_dict') else dict(record.schema_definition)
+                return GraphSchema.model_validate(raw)
+        except Exception as e:
+            # Only silence "no active schema" — log everything else
+            if "DoesNotExist" not in type(e).__name__:
+                logger.warning(
+                    "Failed to load active schema for partition %s: %s",
+                    self.partition_key, e,
+                )
+        return None
+
+    def _extract_from_existing_graph(self) -> GraphSchema:
+        """Use SchemaFromExistingGraphExtractor to read schema from tenant's Neo4j."""
+        extractor = SchemaFromExistingGraphExtractor(
+            driver=self.graph_rag_util.driver,
+            neo4j_database=self.graph_rag_util.neo4j_database,
+        )
+        return _run_async(extractor.run())
 
     def _discover_schema(self, text: str) -> GraphSchema:
         """Use LLM to discover entity types from text."""
@@ -201,31 +340,11 @@ class SchemaResolver:
 
         return new_nodes, new_rels, new_patterns
 
-    def _load_active_schema(self) -> Optional[GraphSchema]:
-        """Load the active GraphSchema for this partition."""
-        from ..models.graph_schema import get_active_graph_schema
-
-        try:
-            record = get_active_graph_schema(self.partition_key)
-            if record and record.schema_definition:
-                return GraphSchema.from_dict(dict(record.schema_definition))
-        except Exception:
-            pass
-        return None
-
     def _auto_generate_and_save(self, text: str) -> GraphSchema:
         """Use SchemaFromTextExtractor to auto-generate GraphSchema from text, save as active."""
         schema = self._discover_schema(text)
         self._save_as_active(schema, "auto")
         return schema
-
-    def _extract_from_existing_graph(self) -> GraphSchema:
-        """Use SchemaFromExistingGraphExtractor to read schema from tenant's Neo4j."""
-        extractor = SchemaFromExistingGraphExtractor(
-            driver=self.graph_rag_util.driver,
-            neo4j_database=self.graph_rag_util.neo4j_database,
-        )
-        return _run_async(extractor.run())
 
     def _dict_to_graph_schema(self, schema_dict: dict) -> GraphSchema:
         """
@@ -287,7 +406,7 @@ class SchemaResolver:
         return self._merge_schemas(base_schema, auto_schema)
 
     def _merge_schemas(self, base: GraphSchema, auto: GraphSchema) -> GraphSchema:
-        """Merge base and auto schemas. Base takes priority."""
+        """Merge base and auto schemas. Base takes priority. Result is always a superset of base."""
         base_labels = self._get_node_labels(base)
         base_rel_labels = self._get_rel_labels(base)
 
