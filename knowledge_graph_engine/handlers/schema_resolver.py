@@ -5,7 +5,7 @@ __author__ = "silvaengine"
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
     import nest_asyncio
@@ -53,11 +53,15 @@ from neo4j_graphrag.experimental.components.schema import (
 
 class SchemaResolver:
     """
-    Resolves graph schema for a partition. Priority order:
+    Resolves graph schema for a partition with automatic schema evolution.
+
+    Priority order:
     1. graph_schema dict provided → save as new active schema (deactivates old), use it
     2. graph_schema string ("EXTRACTED"/"FREE"/"FROM_GRAPH") → use directly
-    3. Active schema exists → use it
-    4. Neither → auto-generate from text, save as new active schema
+    3. Active schema exists → verify it covers the text:
+       a. If it covers the text → reuse as-is (no save)
+       b. If new types discovered → merge into active schema, save as new version
+    4. No active schema → auto-generate from text, save as new active schema
 
     All methods use the exact neo4j-graphrag-python API.
     """
@@ -75,7 +79,9 @@ class SchemaResolver:
         Returns a value suitable for SimpleKGPipeline's `schema` parameter:
         either a GraphSchema object, or "EXTRACTED"/"FREE" string.
 
-        Always uses the active schema for the partition when no graph_schema is provided.
+        When no graph_schema is provided, uses the active schema. If the active
+        schema doesn't cover the entity types in the text, it evolves the schema
+        by merging new types and saving a new version.
         """
         if isinstance(graph_schema, dict):
             if graph_schema.get("auto_extend"):
@@ -94,11 +100,106 @@ class SchemaResolver:
                 return graph_schema
             raise ValueError(f"Unknown schema string: {graph_schema}")
 
-        # No graph_schema provided: use active schema, or auto-generate and save as active
+        # No graph_schema provided: use active schema with evolution check
         active = self._load_active_schema()
         if active:
-            return active
+            return self._verify_and_evolve(text, active)
         return self._auto_generate_and_save(text)
+
+    def _verify_and_evolve(self, text: str, active: GraphSchema) -> GraphSchema:
+        """
+        Check if the active schema covers the entity types in the text.
+        If yes, return the active schema as-is (no save, no LLM cost for most records).
+        If new types are discovered, merge them into the active schema and save a new version.
+        """
+        # Extract what the LLM thinks the text needs
+        discovered = self._discover_schema(text)
+
+        # Check coverage
+        new_nodes, new_rels, new_patterns = self._find_new_types(active, discovered)
+
+        if not new_nodes and not new_rels and not new_patterns:
+            logger.debug(
+                "Active schema covers text for partition %s — reusing without save.",
+                self.partition_key,
+            )
+            return active
+
+        # Schema evolution: merge new types into the active schema
+        logger.info(
+            "Schema evolution for partition %s: +%d node types, +%d relationship types, +%d patterns",
+            self.partition_key,
+            len(new_nodes),
+            len(new_rels),
+            len(new_patterns),
+        )
+        merged = self._merge_schemas(active, discovered)
+        self._save_as_active(merged, "evolved")
+        return merged
+
+    def _discover_schema(self, text: str) -> GraphSchema:
+        """Use LLM to discover entity types from text."""
+        extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
+        return _run_async(extractor.run(text=text))
+
+    def _get_node_labels(self, schema: GraphSchema) -> Set[str]:
+        """Extract all node labels from a schema."""
+        labels = set()
+        if schema.node_types:
+            for nt in schema.node_types:
+                if isinstance(nt, str):
+                    labels.add(nt)
+                else:
+                    labels.add(nt.label)
+        return labels
+
+    def _get_rel_labels(self, schema: GraphSchema) -> Set[str]:
+        """Extract all relationship labels from a schema."""
+        labels = set()
+        if schema.relationship_types:
+            for rt in schema.relationship_types:
+                if isinstance(rt, str):
+                    labels.add(rt)
+                else:
+                    labels.add(rt.label)
+        return labels
+
+    def _find_new_types(
+        self, active: GraphSchema, discovered: GraphSchema
+    ) -> Tuple[List, List, List]:
+        """
+        Compare discovered schema against active schema.
+        Returns (new_node_types, new_rel_types, new_patterns) not in the active schema.
+        """
+        active_node_labels = self._get_node_labels(active)
+        active_rel_labels = self._get_rel_labels(active)
+        active_patterns = set()
+        if active.patterns:
+            for p in active.patterns:
+                active_patterns.add(tuple(p) if not isinstance(p, tuple) else p)
+
+        new_nodes = []
+        if discovered.node_types:
+            for nt in discovered.node_types:
+                label = nt if isinstance(nt, str) else nt.label
+                if label not in active_node_labels:
+                    new_nodes.append(nt)
+
+        new_rels = []
+        if discovered.relationship_types:
+            for rt in discovered.relationship_types:
+                label = rt if isinstance(rt, str) else rt.label
+                if label not in active_rel_labels:
+                    new_rels.append(rt)
+
+        new_patterns = []
+        if discovered.patterns:
+            for p in discovered.patterns:
+                pt = tuple(p) if not isinstance(p, tuple) else p
+                if pt not in active_patterns:
+                    new_patterns.append(p)
+
+        return new_nodes, new_rels, new_patterns
 
     def _load_active_schema(self) -> Optional[GraphSchema]:
         """Load the active GraphSchema for this partition."""
@@ -114,8 +215,7 @@ class SchemaResolver:
 
     def _auto_generate_and_save(self, text: str) -> GraphSchema:
         """Use SchemaFromTextExtractor to auto-generate GraphSchema from text, save as active."""
-        extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
-        schema: GraphSchema = _run_async(extractor.run(text=text))
+        schema = self._discover_schema(text)
         self._save_as_active(schema, "auto")
         return schema
 
@@ -183,25 +283,26 @@ class SchemaResolver:
 
     def _hybrid_schema(self, text: str, base_schema: GraphSchema) -> GraphSchema:
         """Start from base schema, LLM discovers additional types from text."""
-        extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
-        auto_schema: GraphSchema = _run_async(extractor.run(text=text))
+        auto_schema = self._discover_schema(text)
         return self._merge_schemas(base_schema, auto_schema)
 
     def _merge_schemas(self, base: GraphSchema, auto: GraphSchema) -> GraphSchema:
         """Merge base and auto schemas. Base takes priority."""
-        base_labels = {nt.label for nt in base.node_types} if base.node_types else set()
-        base_rel_labels = {rt.label for rt in base.relationship_types} if base.relationship_types else set()
+        base_labels = self._get_node_labels(base)
+        base_rel_labels = self._get_rel_labels(base)
 
         merged_nodes = list(base.node_types) if base.node_types else []
         if auto.node_types:
             for nt in auto.node_types:
-                if nt.label not in base_labels:
+                label = nt if isinstance(nt, str) else nt.label
+                if label not in base_labels:
                     merged_nodes.append(nt)
 
         merged_rels = list(base.relationship_types) if base.relationship_types else []
         if auto.relationship_types:
             for rt in auto.relationship_types:
-                if rt.label not in base_rel_labels:
+                label = rt if isinstance(rt, str) else rt.label
+                if label not in base_rel_labels:
                     merged_rels.append(rt)
 
         merged_patterns = list(base.patterns) if base.patterns else []
