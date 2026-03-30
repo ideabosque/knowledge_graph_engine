@@ -26,16 +26,14 @@ class Extractor:
         """
         Extract knowledge graph from document text.
 
-        Args:
-            params: Extraction parameters
-                - partition_key: Tenant partition key (required)
-                - text: Document text to extract from (required)
-                - graph_schema: Optional GraphSchema, dict, or "EXTRACTED"/"FREE"/"FROM_GRAPH"
-                - document_source: Optional document source identifier
-                - document_external_id: Optional external document ID
+        Flow:
+        1. Resolve schema: use active schema, user-provided, or "EXTRACTED" fallback.
+        2. Extract entities/relationships into Neo4j using that schema.
+        3. After extraction, check if the graph now has types not in the active schema.
+        4. If new types found, build a new schema version on top of the old one.
 
-        Returns:
-            dict with extraction results including document_uuid
+        This ensures the schema definition always evolves to cover all extracted data,
+        and each new version is a superset of the previous version.
         """
         partition_key = params.get("partition_key")
         text = params.get("text", "")
@@ -56,7 +54,7 @@ class Extractor:
         # Get tenant's GraphRAG utility
         graph_rag_util = Config.get_graph_rag_util(partition_key)
 
-        # Resolve schema (active schema, user-provided, or auto-generate)
+        # Resolve schema (active schema, user-provided, or fallback)
         schema_resolver = SchemaResolver(graph_rag_util, partition_key)
         resolved_schema = schema_resolver.resolve(
             text=text,
@@ -89,6 +87,16 @@ class Extractor:
                     error_message=str(e),
                 )
                 raise RuntimeError(f"Knowledge graph extraction failed: {e}") from e
+
+        # Post-extraction: evolve schema if graph now has types not in the active schema.
+        # This ensures the schema definition always grows to cover all extracted data.
+        try:
+            schema_resolver.evolve_schema_from_graph(text=text)
+        except Exception as evolve_err:
+            if self.logger:
+                self.logger.warning(
+                    "Schema evolution after extraction failed: %s", evolve_err
+                )
 
         # Persist document metadata to DynamoDB
         document_uuid = f"doc-{pendulum.now('UTC').int_timestamp}-{uuid.uuid4().hex[:8]}"
