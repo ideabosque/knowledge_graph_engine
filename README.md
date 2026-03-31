@@ -67,7 +67,7 @@ settings = {
 engine = KnowledgeGraphEngine(logger, **settings)
 services = deploy()
 
-result = engine.knowledge_graph_engine_graphql(
+result = engine.knowledge_graph_graphql(
     context={},
     query="""
     query Search($queryText: String!) {
@@ -97,7 +97,7 @@ python -m knowledge_graph_engine
 ```
 
 The daemon exposes:
-- `POST /{endpoint_id}/knowledge_graph_engine_graphql` — GraphQL endpoint (requires JWT token, `Part-Id` header)
+- `POST /{endpoint_id}/knowledge_graph_graphql` — GraphQL endpoint (requires JWT token, `Part-Id` header)
 - `POST /{endpoint_id}/extract` — Background extraction (returns `task_id` immediately, for batch pipelines)
 - `GET /{endpoint_id}/extract/{task_id}` — Poll extraction status (`pending` → `running` → `completed`/`failed`)
 - `POST /auth/token` — Get JWT token (`username` + `password` form data)

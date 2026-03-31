@@ -23,7 +23,7 @@ def deploy() -> List:
             "service": "Knowledge Graph Engine",
             "class": "KnowledgeGraphEngine",
             "functions": {
-                "knowledge_graph_engine_graphql": {
+                "knowledge_graph_graphql": {
                     "is_static": False,
                     "label": "Knowledge Graph Engine",
                     "query": [
@@ -110,7 +110,7 @@ class KnowledgeGraphEngine(Graphql):
 
         Config.initialize(logger, setting)
 
-    def knowledge_graph_engine_graphql(self, **params: Any) -> Any:
+    def knowledge_graph_graphql(self, **params: Any) -> Any:
         self._apply_partition_defaults(params)
         return self.execute(self.__class__.build_graphql_schema(), **params)
 

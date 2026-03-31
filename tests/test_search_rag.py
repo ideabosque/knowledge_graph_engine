@@ -73,13 +73,11 @@ TEXT2CYPHER_QUERY = """
     query(
         $queryText: String!,
         $searchMode: String,
-        $schemaName: String,
         $topK: Int
     ) {
         search(
             queryText: $queryText,
             searchMode: $searchMode,
-            schemaName: $schemaName,
             topK: $topK
         ) {
             results
@@ -167,7 +165,7 @@ class TestVectorSearch:
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=SEARCH_QUERY,
             variables={
                 "queryText": "snowboard products for winter sports",
@@ -203,7 +201,7 @@ class TestVectorSearch:
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=SEARCH_QUERY,
             variables={
                 "queryText": "safety glasses protective equipment",
@@ -234,14 +232,19 @@ class TestText2CypherSearch:
     """Test text-to-Cypher search."""
 
     def test_text2cypher_search(self, engine):
-        """Search using LLM-generated Cypher queries."""
+        """Search using LLM-generated Cypher queries.
+        
+        Note: This test runs text2cypher search. Results may be limited without
+        a configured Neo4j schema. The schema helps the LLM generate accurate
+        Cypher queries for your specific graph structure.
+        """
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=TEXT2CYPHER_QUERY,
             variables={
-                "queryText": "What products are sold by NEProdAI?",
+                "queryText": "What products are available?",
                 "searchMode": "text2cypher",
                 "topK": 10,
             },
@@ -259,9 +262,11 @@ class TestText2CypherSearch:
             for i, item in enumerate(data.get("results") or []):
                 content = str(item)[:150] if item else "N/A"
                 print(f"  [{i+1}] {content}...")
+            # Text2Cypher may return limited results without schema context
+            print(f"\n  Note: Results may be limited without Neo4j schema configuration")
         else:
             errors = body.get("errors", [])
-            print(f"\nText2Cypher errors (may be expected without schema): {errors}")
+            print(f"\nText2Cypher errors: {errors}")
 
 
 @pytest.mark.integration
@@ -273,7 +278,7 @@ class TestRAG:
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=RAG_QUERY,
             variables={
                 "queryText": "What snowboard products are available and what are their prices?",
@@ -304,7 +309,7 @@ class TestRAG:
         endpoint_id = SETTING.get("endpoint_id")
         part_id = SETTING.get("part_id")
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=RAG_QUERY,
             variables={
                 "queryText": "What work gloves are available?",
