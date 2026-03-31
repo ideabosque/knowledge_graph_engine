@@ -114,7 +114,7 @@ class TestDaemonGraphQL:
     def test_ping(self, daemon_server, auth_token):
         endpoint_id = SETTING.get("endpoint_id", "gpt")
         resp = requests.post(
-            f"{daemon_server}/{endpoint_id}/knowledge_graph_engine_graphql",
+            f"{daemon_server}/{endpoint_id}/knowledge_graph_graphql",
             json={"query": "{ ping }"},
             headers={
                 "Authorization": f"Bearer {auth_token}",
@@ -128,7 +128,7 @@ class TestDaemonGraphQL:
     def test_graphql_unauthenticated(self, daemon_server):
         endpoint_id = SETTING.get("endpoint_id", "gpt")
         resp = requests.post(
-            f"{daemon_server}/{endpoint_id}/knowledge_graph_engine_graphql",
+            f"{daemon_server}/{endpoint_id}/knowledge_graph_graphql",
             json={"query": "{ ping }"},
         )
         assert resp.status_code == 401
@@ -146,7 +146,7 @@ class TestDaemonGraphQL:
             }
         """
         resp = requests.post(
-            f"{daemon_server}/{endpoint_id}/knowledge_graph_engine_graphql",
+            f"{daemon_server}/{endpoint_id}/knowledge_graph_graphql",
             json={"query": query, "variables": {"instanceId": "default"}},
             headers={
                 "Authorization": f"Bearer {auth_token}",
@@ -167,7 +167,7 @@ class TestDaemonGraphQL:
             }
         """
         resp = requests.post(
-            f"{daemon_server}/{endpoint_id}/knowledge_graph_engine_graphql",
+            f"{daemon_server}/{endpoint_id}/knowledge_graph_graphql",
             json={
                 "query": query,
                 "variables": {
