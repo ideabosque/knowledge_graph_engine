@@ -15,26 +15,26 @@ except ImportError:  # pragma: no cover
 if nest_asyncio is not None:  # pragma: no branch
     nest_asyncio.apply()
 
-from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
+from neo4j_graphrag.embeddings import OpenAIEmbeddings
+from neo4j_graphrag.experimental.components.kg_writer import KGWriter
 from neo4j_graphrag.experimental.components.schema import (
     GraphSchema,
     SchemaFromTextExtractor,
 )
-from neo4j_graphrag.experimental.components.kg_writer import KGWriter
-from neo4j_graphrag.retrievers import (
-    VectorRetriever,
-    VectorCypherRetriever,
-    Text2CypherRetriever,
-    HybridRetriever,
-)
+from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 from neo4j_graphrag.generation import GraphRAG
 from neo4j_graphrag.generation.prompts import RagTemplate
 from neo4j_graphrag.indexes import (
-    create_vector_index,
     create_fulltext_index,
+    create_vector_index,
     drop_index_if_exists,
 )
-from neo4j_graphrag.embeddings import OpenAIEmbeddings
+from neo4j_graphrag.retrievers import (
+    HybridRetriever,
+    Text2CypherRetriever,
+    VectorCypherRetriever,
+    VectorRetriever,
+)
 
 try:
     from neo4j_graphrag.embeddings import OllamaEmbeddings
@@ -70,6 +70,7 @@ class _SuppressEventLoopClosedFilter(logging.Filter):
     """Filter out 'Event loop is closed' errors from asyncio logger.
     These are harmless GC cleanup noise from httpx.AsyncClient.__del__.
     """
+
     def filter(self, record):
         if record.exc_info and record.exc_info[1]:
             if "Event loop is closed" in str(record.exc_info[1]):
@@ -105,7 +106,9 @@ class GraphRAGUtil:
     Uses neo4j_database parameter (not database) per library convention.
     """
 
-    def __init__(self, driver: Any, neo4j_database: str, settings: Dict[str, Any]) -> None:
+    def __init__(
+        self, driver: Any, neo4j_database: str, settings: Dict[str, Any]
+    ) -> None:
         self.driver = driver
         self.neo4j_database = neo4j_database
         self.settings = settings
@@ -155,7 +158,9 @@ class GraphRAGUtil:
             raise ValueError(f"Unsupported LLM type: {llm_type}")
 
     def _init_embedder(self) -> None:
-        embedding_provider = self.settings.get("embedding_provider", self.settings.get("llm_type", "openai"))
+        embedding_provider = self.settings.get(
+            "embedding_provider", self.settings.get("llm_type", "openai")
+        )
         embedding_model = self.settings.get("embedding_model", "text-embedding-3-small")
 
         if embedding_provider == "ollama":
@@ -194,6 +199,7 @@ class GraphRAGUtil:
         """
         if kg_writer is None:
             from .neo4j_writer import CustomNeo4jWriter
+
             kg_writer = CustomNeo4jWriter(
                 driver=self.driver,
                 neo4j_database=self.neo4j_database,

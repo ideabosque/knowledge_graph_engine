@@ -171,7 +171,7 @@ class TestWooCommerceExtract:
                 "documentExternalId": str(product.get("id", "")),
             }
 
-            result = engine.knowledge_graph_engine_graphql(
+            result = engine.knowledge_graph_graphql(
                 query=EXTRACT_MUTATION,
                 variables=variables,
                 endpoint_id=endpoint_id,

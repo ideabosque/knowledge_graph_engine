@@ -100,8 +100,8 @@ def me(user: Dict = Depends(_current_user)) -> Dict:
 
 
 # === GraphQL Endpoint ===
-@app.post("/{endpoint_id}/knowledge_graph_engine_graphql")
-async def knowledge_graph_engine_graphql(endpoint_id: str, request: Request) -> Dict:
+@app.post("/{endpoint_id}/knowledge_graph_graphql")
+async def knowledge_graph_graphql(endpoint_id: str, request: Request) -> Dict:
     """Handle GraphQL queries and mutations for the Knowledge Graph Engine."""
     _rate_limit_check(request.client.host if request.client else "unknown")
 
@@ -120,7 +120,7 @@ async def knowledge_graph_engine_graphql(endpoint_id: str, request: Request) -> 
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
         _extract_executor,
-        lambda: Config.kge.knowledge_graph_engine_graphql(**params),
+        lambda: Config.kge.knowledge_graph_graphql(**params),
     )
 
     try:
