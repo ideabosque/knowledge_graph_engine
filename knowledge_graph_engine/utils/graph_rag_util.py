@@ -122,7 +122,7 @@ class GraphRAGUtil:
         if llm_type == "openai":
             self.llm = OpenAILLM(
                 model_name=llm_name,
-                model_params={"top_p": 1, "temperature": 0, **model_params},
+                model_params={"top_p": 1, "temperature": 1, **model_params},
                 api_key=self.settings.get("openai_api_key"),
                 base_url=self.settings.get("openai_base_url"),
             )
