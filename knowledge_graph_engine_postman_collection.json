@@ -44,7 +44,7 @@
     },
     {
       "key": "funct",
-      "value": "knowledge_graph_engine_graphql",
+      "value": "knowledge_graph_graphql",
       "type": "string"
     },
     {
@@ -224,13 +224,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Ping via FastAPI daemon GraphQL endpoint with JWT auth."
@@ -275,13 +275,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Register or update a Neo4j instance via FastAPI daemon."
@@ -321,13 +321,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Get a specific Neo4j instance by instance_id via FastAPI daemon."
@@ -367,13 +367,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "List all Neo4j instances via FastAPI daemon."
@@ -413,13 +413,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Delete a Neo4j instance via FastAPI daemon."
@@ -464,13 +464,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Create or update a graph schema via FastAPI daemon."
@@ -510,13 +510,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Get a specific graph schema by name via FastAPI daemon."
@@ -556,13 +556,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "List all graph schemas via FastAPI daemon."
@@ -602,13 +602,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Delete a graph schema via FastAPI daemon."
@@ -653,13 +653,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Create or update a document via FastAPI daemon."
@@ -699,13 +699,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Get a specific document by UUID via FastAPI daemon."
@@ -745,13 +745,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "List documents via FastAPI daemon."
@@ -791,13 +791,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Delete a document via FastAPI daemon."
@@ -842,13 +842,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Extract entities and relationships from text via FastAPI daemon."
@@ -888,13 +888,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Extract with a custom graph schema via FastAPI daemon."
@@ -939,13 +939,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Vector search via FastAPI daemon."
@@ -985,13 +985,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Text2Cypher search via FastAPI daemon."
@@ -1031,13 +1031,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Hybrid search via FastAPI daemon."
@@ -1077,13 +1077,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Vector Cypher search via FastAPI daemon."
@@ -1128,13 +1128,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "RAG query via FastAPI daemon."
@@ -1174,13 +1174,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "RAG with custom prompt via FastAPI daemon."
@@ -1220,13 +1220,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "RAG with schema context via FastAPI daemon."
@@ -1271,13 +1271,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "Get a specific request record via FastAPI daemon."
@@ -1317,13 +1317,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "List request records via FastAPI daemon."
@@ -1363,13 +1363,13 @@
               }
             },
             "url": {
-              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_engine_graphql",
+              "raw": "{{daemon_url}}/{{endpoint_id}}/knowledge_graph_graphql",
               "host": [
                 "{{daemon_url}}"
               ],
               "path": [
                 "{{endpoint_id}}",
-                "knowledge_graph_engine_graphql"
+                "knowledge_graph_graphql"
               ]
             },
             "description": "List requests filtered by search mode via FastAPI daemon."

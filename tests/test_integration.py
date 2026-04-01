@@ -21,7 +21,7 @@ class TestPingAndTables:
 
     def test_ping(self, engine):
         """Test ping query returns successful response."""
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query="{ ping }",
             endpoint_id=SETTING.get("endpoint_id"),
             part_id=SETTING.get("part_id"),
@@ -111,7 +111,7 @@ class TestNeo4jInstance:
             "neo4jDatabase": SETTING.get("neo4j_database", "neo4j"),
         }
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=mutation,
             variables=variables,
             endpoint_id=endpoint_id,
@@ -150,7 +150,7 @@ class TestNeo4jInstance:
             }
         """
 
-        result = engine.knowledge_graph_engine_graphql(
+        result = engine.knowledge_graph_graphql(
             query=query,
             variables={"instanceId": "default"},
             endpoint_id=endpoint_id,
