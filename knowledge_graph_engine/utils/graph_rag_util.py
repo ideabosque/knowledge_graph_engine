@@ -24,6 +24,9 @@ from neo4j_graphrag.experimental.components.schema import (
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 from neo4j_graphrag.generation import GraphRAG
 from neo4j_graphrag.generation.prompts import RagTemplate
+from neo4j import GraphDatabase, Record
+from neo4j_graphrag.types import EntityType, RetrieverResultItem
+from neo4j.graph import Node, Relationship
 from neo4j_graphrag.indexes import (
     create_fulltext_index,
     create_vector_index,
@@ -230,6 +233,7 @@ class GraphRAGUtil:
         index_name: str = "vector",
         filters: Optional[dict] = None,
         top_k: int = 5,
+        is_result_formatter: bool = True,
     ) -> Any:
         """Semantic similarity search on embeddings."""
         retriever = VectorRetriever(
@@ -237,6 +241,8 @@ class GraphRAGUtil:
             index_name=index_name,
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
+            result_formatter=self.default_record_formatter if is_result_formatter else None
+,
         )
         return retriever.search(query_text=query_text, top_k=top_k, filters=filters)
 
@@ -245,6 +251,7 @@ class GraphRAGUtil:
         query_text: str,
         neo4j_schema: Optional[str] = None,
         top_k: int = 10,
+        is_result_formatter: bool = True,
     ) -> Any:
         """
         LLM converts natural language to Cypher.
@@ -255,8 +262,9 @@ class GraphRAGUtil:
             llm=self.llm,
             neo4j_schema=neo4j_schema,
             neo4j_database=self.neo4j_database,
+            result_formatter=self.default_record_formatter if is_result_formatter else None
         )
-        return retriever.search(query_text=query_text)
+        return retriever.search(query_text=query_text, prompt_params={"top_k": top_k})
 
     def vector_cypher_search(
         self,
@@ -264,6 +272,7 @@ class GraphRAGUtil:
         index_name: str = "vector",
         retrieval_query: str = "RETURN node, score",
         top_k: int = 5,
+        is_result_formatter: bool = True,
     ) -> Any:
         """Vector search + custom Cypher traversal."""
         retriever = VectorCypherRetriever(
@@ -272,6 +281,7 @@ class GraphRAGUtil:
             retrieval_query=retrieval_query,
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
+            result_formatter=self.default_record_formatter if is_result_formatter else None
         )
         return retriever.search(query_text=query_text, top_k=top_k)
 
@@ -281,6 +291,7 @@ class GraphRAGUtil:
         vector_index_name: str = "vector",
         fulltext_index_name: str = "fulltext",
         top_k: int = 5,
+        is_result_formatter: bool = True,
     ) -> Any:
         """Combined vector + fulltext search."""
         retriever = HybridRetriever(
@@ -289,6 +300,7 @@ class GraphRAGUtil:
             fulltext_index_name=fulltext_index_name,
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
+            result_formatter=self.default_record_formatter if is_result_formatter else None
         )
         return retriever.search(query_text=query_text, top_k=top_k)
 
@@ -330,3 +342,51 @@ class GraphRAGUtil:
     def close(self) -> None:
         if self.driver:
             self.driver.close()
+
+    def default_record_formatter(self, record: Record) -> RetrieverResultItem:
+        """
+        Best effort to guess the node-to-text method. Inherited classes
+        can override this method to implement custom text formatting.
+        """
+        # return RetrieverResultItem(content=str(record), metadata=record.get("metadata"))
+        content = "" #str(record)
+        metadata = {}
+        for key, value in record.items():
+            if type(key) == str and "embedding" in key:
+                continue
+            metadata[key] = self._process_neo4j_value(value)
+        metadata.update({"metadata": record.get("metadata", {})})
+        print(f"default_record_formatter metadata: {metadata}")
+
+        return RetrieverResultItem(content=content, metadata=metadata)
+
+    def _process_neo4j_value(self, value: Any) -> Any:
+        # print(f"record formatter value type: {type(value)} ---value: {value}")
+        if isinstance(value, Node):
+            label = ""
+            for elem in value.labels:
+                if not elem.startswith("__"):
+                    label = elem
+                    break
+
+            return {
+                "element_id": value.element_id,
+                "label": label,
+                "properties": {k: v for k, v in value.items() if type(k) == str and not "embedding" in k}
+            }
+        elif isinstance(value, Relationship):
+            return {
+                "element_id": value.element_id,
+                "type": value.type,
+                "start_node_element_id": value.start_node_element_id,
+                "end_node_element_id": value.end_node_element_id,
+                "properties": {k: self._process_neo4j_value(v) for k, v in value.items() if type(k) == str and not "embedding" in k}
+            }
+        elif isinstance(value, list):
+            return [self._process_neo4j_value(item) for item in value]
+        elif isinstance(value, (str, int, float, bool, dict, tuple)) or value is None:
+            if isinstance(value, dict):
+                return {k: self._process_neo4j_value(v) for k, v in value.items() if type(k) == str and not "embedding" in k}
+            return value
+        else:
+            return str(value)
