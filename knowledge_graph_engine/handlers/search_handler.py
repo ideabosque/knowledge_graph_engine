@@ -29,6 +29,7 @@ class SearchHandler:
         top_k: int = 10,
         page: int = 1,
         limit: int = 10,
+        is_result_formatter: bool = True,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -39,13 +40,13 @@ class SearchHandler:
         - hybrid: Vector + fulltext combined
         """
         graph_rag = Config.get_graph_rag_util(partition_key)
-
         if search_mode == "vector":
             results = graph_rag.vector_search(
                 query_text=query_text,
                 index_name=index_name,
                 filters=filters,
                 top_k=top_k,
+                is_result_formatter=is_result_formatter
             )
 
         elif search_mode == "text2cypher":
@@ -54,14 +55,18 @@ class SearchHandler:
                 query_text=query_text,
                 neo4j_schema=neo4j_schema,
                 top_k=top_k,
+                is_result_formatter=is_result_formatter
             )
 
         elif search_mode == "vector_cypher":
+            # retrieval_query = retrieval_query or "RETURN node, score"
+            retrieval_query = retrieval_query or "MATCH (node)<-[:FROM_CHUNK]-(rel_node) RETURN rel_node, score"
             results = graph_rag.vector_cypher_search(
                 query_text=query_text,
                 index_name=index_name,
-                retrieval_query=retrieval_query or "RETURN node, score",
+                retrieval_query=retrieval_query,
                 top_k=top_k,
+                is_result_formatter=is_result_formatter
             )
 
         elif search_mode == "hybrid":
@@ -70,6 +75,7 @@ class SearchHandler:
                 vector_index_name=index_name,
                 fulltext_index_name=kwargs.get("fulltext_index_name", "fulltext"),
                 top_k=top_k,
+                is_result_formatter=is_result_formatter
             )
 
         else:
