@@ -19,8 +19,6 @@ def resolve_search(info: ResolveInfo, **kwargs: Any) -> Any:
         return {"results": [], "total": 0}
 
     handler = SearchHandler(info)
-    if "search_type" in kwargs and "search_mode" not in kwargs:
-        kwargs["search_mode"] = kwargs.pop("search_type")
     return handler.search(partition_key=partition_key, **kwargs)
 
 
@@ -32,6 +30,4 @@ def resolve_rag(info: ResolveInfo, **kwargs: Any) -> Any:
         return {"answer": "", "context": []}
 
     handler = RAGHandler(info)
-    if "search_type" in kwargs and "search_mode" not in kwargs:
-        kwargs["search_mode"] = kwargs.pop("search_type")
     return handler.rag(partition_key=partition_key, **kwargs)

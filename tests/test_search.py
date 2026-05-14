@@ -24,7 +24,7 @@ class TestSearch:
 
             from knowledge_graph_engine.queries.search import resolve_search
 
-            result = resolve_search(mock_info, query_text="test query", search_type="vector")
+            result = resolve_search(mock_info, query_text="test query", search_mode="vector")
             assert "results" in result
 
 

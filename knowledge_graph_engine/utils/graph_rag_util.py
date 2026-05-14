@@ -102,6 +102,45 @@ except ImportError:  # pragma: no cover
     VertexAILLM = None
 
 
+# Known embedding model dimensions. Add new entries here as needed.
+# OpenAI: https://platform.openai.com/docs/guides/embeddings
+# Ollama: https://ollama.com/library (see model card)
+_EMBEDDING_DIMENSIONS = {
+    # OpenAI
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    # Ollama
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "all-minilm": 384,
+    "snowflake-arctic-embed": 1024,
+    "bge-large": 1024,
+    "bge-base": 768,
+    "bge-small": 384,
+}
+
+
+def resolve_embedding_dimensions(
+    embedding_model: str, override: Optional[int] = None
+) -> int:
+    """Return the vector dimension for an embedding model.
+
+    Priority: explicit `override` setting → known model lookup → default 1536.
+    Logs a warning when falling back to the default for an unknown model.
+    """
+    if override:
+        return int(override)
+    if embedding_model in _EMBEDDING_DIMENSIONS:
+        return _EMBEDDING_DIMENSIONS[embedding_model]
+    logger.warning(
+        "Unknown embedding model %r — defaulting to 1536 dimensions. "
+        "Set `embedding_dimensions` in settings to override.",
+        embedding_model,
+    )
+    return 1536
+
+
 class GraphRAGUtil:
     """
     GraphRAG operations against a tenant's dedicated Neo4j instance.
@@ -304,6 +343,17 @@ class GraphRAGUtil:
         )
         return retriever.search(query_text=query_text, top_k=top_k)
 
+    def _embedding_dimensions(self) -> int:
+        """Resolve embedding vector dimension from settings + model lookup."""
+        embedding_model = self.settings.get(
+            "embedding_model", "text-embedding-3-small"
+        )
+        # Accept both `embedding_dimensions` (preferred) and legacy `dimension`.
+        override = self.settings.get(
+            "embedding_dimensions", self.settings.get("dimension")
+        )
+        return resolve_embedding_dimensions(embedding_model, override)
+
     def create_vector_index(
         self,
         index_name: str = "vector",
@@ -319,7 +369,7 @@ class GraphRAGUtil:
             index_name,
             label=label,
             embedding_property=embedding_property,
-            dimensions=self.settings.get("dimension", 1536),
+            dimensions=self._embedding_dimensions(),
             similarity_fn="cosine",
             neo4j_database=self.neo4j_database,
         )
@@ -339,29 +389,72 @@ class GraphRAGUtil:
             neo4j_database=self.neo4j_database,
         )
 
+    def index_exists(self, index_name: str) -> bool:
+        """Check whether a Neo4j index with this name exists on the tenant DB."""
+        try:
+            records, _, _ = self.driver.execute_query(
+                "SHOW INDEXES YIELD name WHERE name = $name RETURN count(*) AS n",
+                name=index_name,
+                database_=self.neo4j_database,
+            )
+            return bool(records) and records[0]["n"] > 0
+        except Exception as exc:
+            logger.warning(
+                "Index existence check failed for %r: %s", index_name, exc
+            )
+            return False
+
+    def bootstrap_indexes_if_missing(
+        self,
+        vector_index_name: str = "vector",
+        label: str = "Chunk",
+        embedding_property: str = "embedding",
+    ) -> None:
+        """Create the vector index if it doesn't already exist.
+
+        Safe to call on every extract — the existence check is cheap and the
+        index creation only happens once per Neo4j database.
+        """
+        if self.index_exists(vector_index_name):
+            return
+        logger.info(
+            "Bootstrapping vector index %r on (:%s.%s) with %d dimensions",
+            vector_index_name,
+            label,
+            embedding_property,
+            self._embedding_dimensions(),
+        )
+        create_vector_index(
+            self.driver,
+            vector_index_name,
+            label=label,
+            embedding_property=embedding_property,
+            dimensions=self._embedding_dimensions(),
+            similarity_fn="cosine",
+            neo4j_database=self.neo4j_database,
+        )
+
     def close(self) -> None:
         if self.driver:
             self.driver.close()
 
     def default_record_formatter(self, record: Record) -> RetrieverResultItem:
+        """Flatten a Neo4j Record into RetrieverResultItem with structured metadata.
+
+        Strips any property whose key contains "embedding" to keep payloads small.
+        Inherited classes can override this method for custom text formatting.
         """
-        Best effort to guess the node-to-text method. Inherited classes
-        can override this method to implement custom text formatting.
-        """
-        # return RetrieverResultItem(content=str(record), metadata=record.get("metadata"))
-        content = "" #str(record)
+        content = ""
         metadata = {}
         for key, value in record.items():
             if type(key) == str and "embedding" in key:
                 continue
             metadata[key] = self._process_neo4j_value(value)
         metadata.update({"metadata": record.get("metadata", {})})
-        print(f"default_record_formatter metadata: {metadata}")
-
+        logger.debug("default_record_formatter metadata: %s", metadata)
         return RetrieverResultItem(content=content, metadata=metadata)
 
     def _process_neo4j_value(self, value: Any) -> Any:
-        # print(f"record formatter value type: {type(value)} ---value: {value}")
         if isinstance(value, Node):
             label = ""
             for elem in value.labels:

@@ -98,6 +98,17 @@ class Extractor:
                     "Schema evolution after extraction failed: %s", evolve_err
                 )
 
+        # Bootstrap the vector index on first extraction. Idempotent — only
+        # creates the index when it doesn't exist, so this is cheap on subsequent
+        # calls. Without this, search queries fail with "No index with name vector found".
+        try:
+            graph_rag_util.bootstrap_indexes_if_missing()
+        except Exception as bootstrap_err:
+            if self.logger:
+                self.logger.warning(
+                    "Vector index bootstrap failed: %s", bootstrap_err
+                )
+
         # Persist document metadata to DynamoDB
         document_uuid = f"doc-{pendulum.now('UTC').int_timestamp}-{uuid.uuid4().hex[:8]}"
         from .partition_manager import PartitionManager

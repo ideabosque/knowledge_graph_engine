@@ -297,12 +297,13 @@ class Config:
             if cached is not None:
                 return cached
 
+            # Both the driver and the database name come from the same active
+            # Neo4j instance record. Failing to find one means the partition is
+            # not registered — surface that loudly rather than silently routing
+            # to a default "neo4j" database that probably doesn't have the data.
             driver = Neo4jConnectionManager.get_driver(partition_key)
-            try:
-                instance = get_active_neo4j_instance(partition_key)
-                database = instance.neo4j_database or "neo4j"
-            except Exception:
-                database = "neo4j"
+            instance = get_active_neo4j_instance(partition_key)
+            database = instance.neo4j_database or "neo4j"
 
             graph_rag = GraphRAGUtil(
                 driver=driver,

@@ -118,32 +118,28 @@ def get_graph_schemas_for_partition(partition_key: str) -> list:
 )
 def resolve_graph_schema_list(info: ResolveInfo, **kwargs: Any) -> Any:
     partition_key = info.context.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required in context")
+
     schema_type = kwargs.get("schema_type")
     statuses = kwargs.get("statuses")
     updated_at_gt = kwargs.get("updated_at_gt")
     updated_at_lt = kwargs.get("updated_at_lt")
 
-    args = []
-    inquiry_funct = GraphSchemaModel.scan
-    count_funct = GraphSchemaModel.count
-
-    if partition_key:
-        if updated_at_gt is not None and updated_at_lt is not None:
-            range_key_condition = GraphSchemaModel.updated_at.between(
-                updated_at_gt, updated_at_lt
-            )
-        elif updated_at_gt is not None:
-            range_key_condition = GraphSchemaModel.updated_at > updated_at_gt
-        elif updated_at_lt is not None:
-            range_key_condition = GraphSchemaModel.updated_at < updated_at_lt
-        else:
-            range_key_condition = None
-
-        inquiry_funct = GraphSchemaModel.updated_at_index.query
-        count_funct = GraphSchemaModel.updated_at_index.count
-        args = [partition_key, range_key_condition]
+    if updated_at_gt is not None and updated_at_lt is not None:
+        range_key_condition = GraphSchemaModel.updated_at.between(
+            updated_at_gt, updated_at_lt
+        )
+    elif updated_at_gt is not None:
+        range_key_condition = GraphSchemaModel.updated_at > updated_at_gt
+    elif updated_at_lt is not None:
+        range_key_condition = GraphSchemaModel.updated_at < updated_at_lt
     else:
-        args = [partition_key] if partition_key else []
+        range_key_condition = None
+
+    inquiry_funct = GraphSchemaModel.updated_at_index.query
+    count_funct = GraphSchemaModel.updated_at_index.count
+    args = [partition_key, range_key_condition]
 
     the_filters = None
     if schema_type:

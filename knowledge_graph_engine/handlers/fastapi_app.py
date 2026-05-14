@@ -27,12 +27,20 @@ _extract_max_workers = int(os.environ.get("KGE_EXTRACT_WORKERS", "4"))
 _extract_executor = ThreadPoolExecutor(max_workers=_extract_max_workers, thread_name_prefix="kg-extract")
 
 
-def _get_partition_key(endpoint_id: str, request: Request) -> Tuple[str, str | None]:
-    """Construct partition_key from endpoint_id and optional Part-Id header."""
+def _get_partition_key(endpoint_id: str, request: Request) -> Tuple[str, str]:
+    """Construct partition_key from endpoint_id and required Part-Id header.
+
+    Raises 400 if Part-Id is missing. A bare endpoint_id would hash to its own
+    partition bucket, hiding data written under the proper `endpoint#part_id` key —
+    so we reject the request rather than silently mis-routing it.
+    """
     part_id = request.headers.get("Part-Id") or request.headers.get("Part-ID")
-    if part_id:
-        return f"{endpoint_id}#{part_id}", part_id
-    return endpoint_id, None
+    if not part_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Part-Id header is required to construct partition_key",
+        )
+    return f"{endpoint_id}#{part_id}", part_id
 
 
 def _rate_limit_check(

@@ -101,23 +101,17 @@ def get_neo4j_instance_type(
 )
 def resolve_neo4j_instance_list(info: ResolveInfo, **kwargs: Any) -> Any:
     partition_key = info.context.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required in context")
+
     statuses = kwargs.get("statuses")
 
-    the_filters = None
+    inquiry_funct = Neo4jInstanceModel.query
+    count_funct = Neo4jInstanceModel.count
+    args = [partition_key]
+
     if statuses:
-        the_filters = Neo4jInstanceModel.status.is_in(*statuses)
-
-    if partition_key:
-        inquiry_funct = Neo4jInstanceModel.query
-        count_funct = Neo4jInstanceModel.count
-        args = [partition_key]
-    else:
-        inquiry_funct = Neo4jInstanceModel.scan
-        count_funct = Neo4jInstanceModel.count
-        args = []
-
-    if the_filters is not None:
-        args.append(the_filters)
+        args.append(Neo4jInstanceModel.status.is_in(*statuses))
 
     return inquiry_funct, count_funct, args
 
