@@ -120,17 +120,18 @@ knowledge_graph_engine/
 │   ├── config.py               # Thread-safe Config singleton (aligned with aace)
 │   ├── neo4j_connection_manager.py  # Driver pool, one per tenant
 │   ├── partition_manager.py    # build/parse partition_key
-│   ├── schema_resolver.py      # Schema resolution (active, user-provided, auto-generate)
-│   ├── extractor.py            # KG extraction via SimpleKGPipeline
-│   ├── search_handler.py       # 4-mode search dispatch
+│   ├── schema_resolver.py      # Schema resolution + two-phase evolution (text match → LLM)
+│   ├── extractor.py            # KG extraction via SimpleKGPipeline + post-extraction evolution
+│   ├── search_handler.py       # 4-mode search dispatch (with result_formatter toggle)
 │   ├── rag_handler.py          # RAG with configurable retriever
-│   ├── fastapi_app.py          # FastAPI app for daemon mode
+│   ├── fastapi_app.py          # FastAPI app for daemon mode + background extract endpoint
 │   ├── auth_router.py          # JWT auth endpoints (login, me)
+│   ├── jwt_local.py            # Local JWT auth provider
+│   ├── jwt_cognito.py          # Cognito JWT auth provider
 │   └── middleware.py           # FlexJWTMiddleware for daemon auth
 ├── models/
 │   ├── document.py             # kge-documents (hash: partition_key, range: document_uuid)
 │   ├── graph_schema.py         # kge-graph_schemas (hash: partition_key, range: schema_name)
-│   ├── data_source.py          # kge-data_sources (hash: partition_key, range: data_source_name)
 │   ├── neo4j_instance.py       # kge-neo4j_instances (hash: partition_key, range: instance_id)
 │   ├── request.py              # kge-requests (hash: partition_key, range: request_uuid)
 │   ├── document_process_error.py  # kge-document_process_errors
@@ -140,39 +141,47 @@ knowledge_graph_engine/
 │       ├── base.py             # SafeDataLoader
 │       ├── document_loader.py
 │       ├── graph_schema_loader.py
-│       ├── data_source_loader.py
 │       └── __init__.py         # RequestLoaders + get_loaders()
 ├── mutations/
 │   ├── document.py             # InsertUpdateDocument, DeleteDocument
 │   ├── graph_schema.py         # InsertUpdateGraphSchema, DeleteGraphSchema
-│   ├── data_source.py          # InsertUpdateDataSource, DeleteDataSource
 │   ├── neo4j_instance.py       # InsertUpdateNeo4jInstance, DeleteNeo4jInstance
 │   └── extract.py              # ExecuteExtract
 ├── queries/
 │   ├── document.py             # resolve_document, resolve_document_list
 │   ├── graph_schema.py         # resolve_graph_schema, resolve_graph_schema_list
-│   ├── data_source.py          # resolve_data_source, resolve_data_source_list
 │   └── search.py               # resolve_search, resolve_rag
 ├── types/
 │   ├── document.py             # DocumentType, DocumentListType
 │   ├── graph_schema.py         # GraphSchemaType, GraphSchemaListType
-│   ├── data_source.py          # DataSourceType, DataSourceListType
 │   ├── neo4j_instance.py       # Neo4jInstanceType, Neo4jInstanceListType
 │   ├── request.py              # RequestType, RequestListType
+│   ├── document_process_error.py  # DocumentProcessErrorType
 │   └── search.py               # SearchResultType, RAGQueryResultType, ExtractResultType
 ├── utils/
-│   ├── graph_rag_util.py       # GraphRAGUtil (neo4j-graphrag-python wrapper)
+│   ├── graph_rag_util.py       # GraphRAGUtil (neo4j-graphrag-python wrapper) + default_record_formatter
 │   ├── neo4j_writer.py         # CustomNeo4jWriter (KGWriter subclass)
 │   ├── entity_extractor.py     # Fallback entity extraction
 │   ├── normalization.py        # normalize_to_json()
 │   ├── listener.py             # create_listener_info()
 │   └── parse_file.py           # CSV/Excel parsing
 └── tests/
-    ├── conftest.py             # Fixtures: mock_info, mock_logger, partition_key
-    ├── test_extract.py         # Extractor, SchemaResolver, PartitionManager, ConnectionManager
-    ├── test_search.py          # Search and RAG resolution
-    └── test_helpers.py         # Normalization, listener, file parsing
+    ├── conftest.py             # Fixtures: mock_info, mock_logger, partition_key, engine
+    ├── .env / .env.example     # Test environment configuration
+    ├── launch_daemon.py        # Local daemon launcher script
+    ├── test_extract.py         # Extractor unit tests
+    ├── test_search.py          # Search and RAG resolution (unit, mocked)
+    ├── test_helpers.py         # Normalization, listener, file parsing
+    ├── test_import.py          # Smoke tests for package imports
+    ├── test_module_hardening.py     # Filter composition, tiebreakers, UUID gen, config reinit
+    ├── test_integration.py     # Engine init, table existence, ping (integration)
+    ├── test_daemon.py          # FastAPI daemon tests
+    ├── test_schema_evolution_live.py  # Schema evolution against real DynamoDB/Neo4j
+    ├── test_search_rag.py      # End-to-end search/RAG queries (integration)
+    └── test_woocommerce_extract.py    # WooCommerce-driven extraction (integration)
 ```
+
+**Note**: `data_source` was dropped from scope — replaced by `document_source` field on `DocumentModel` (free-form string, no separate registry).
 
 ---
 
@@ -288,7 +297,7 @@ CACHE_RELATIONSHIPS = {
 
 ## Phase 3: Extraction Pipeline
 
-**Status**: IMPLEMENTED (needs end-to-end validation)
+**Status**: IMPLEMENTED + VALIDATED with live data (schema evolution proven end-to-end)
 
 ### neo4j-graphrag-python Integration
 
@@ -316,25 +325,49 @@ from neo4j_graphrag.llm import OpenAILLM, AnthropicLLM, OllamaLLM, VertexAILLM, 
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 ```
 
-### Schema Resolution (Active-Only Pattern)
+### Schema Resolution + Evolution (Active-Only Pattern)
 
-`SchemaResolver` ([schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py)) resolves graph schema for extraction. Only one schema per partition can be active at a time. The system always uses the active schema unless a `graph_schema` dict is provided in the extract call.
+`SchemaResolver` ([schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py)) resolves graph schema for extraction AND evolves it post-extraction. Only one schema per partition can be active at a time. The system always uses the active schema unless a `graph_schema` dict is provided in the extract call.
 
-**Resolution priority:**
+**Resolution priority (before extraction):**
 
 | Priority | Input | Resolution |
 |:---:|-------|------------|
 | 1 | `graph_schema` dict provided | Convert to `GraphSchema`, **save as new active** (deactivates old active) |
 | 2 | `graph_schema` dict with `auto_extend: true` | Merge with LLM-discovered types, **save as new active** |
 | 3 | `graph_schema` string (`"EXTRACTED"`, `"FREE"`, `"FROM_GRAPH"`) | Pass to `SimpleKGPipeline` directly |
-| 4 | No `graph_schema` provided | Load **active schema** from DynamoDB |
-| 5 | No active schema exists | Auto-generate from text via LLM, **save as new active** |
+| 4 | No `graph_schema` provided, active schema exists | Two-phase coverage check (see below) |
+| 5 | No active schema exists | Return `"EXTRACTED"` — let `SimpleKGPipeline` extract freely; schema is captured post-extraction |
+
+**Two-phase coverage check (resolve when active schema exists):**
+
+The resolver avoids LLM calls for records the active schema already covers:
+
+- **Phase 1 (free)**: Check if any of the active schema's node labels appear in the text (case-insensitive substring match). If yes → return the active schema unchanged. This catches ~100% of in-domain records in observed product data.
+- **Phase 2 (LLM)**: If no labels match, ask the LLM (`SchemaFromTextExtractor`) what entity types the text needs. If new types are found, build a new schema version on top of the active one and **save as new active** (superset). If no new types, reuse the active schema.
+
+**Post-extraction evolution (`evolve_schema_from_graph(text)`):**
+
+Called after every successful extraction:
+
+1. Try to read schema from the live graph via `SchemaFromExistingGraphExtractor` (requires APOC).
+2. **APOC fallback**: If APOC isn't installed, fall back to LLM discovery from the extracted `text`.
+3. If no active schema exists → save the discovered schema as the first active version (`captured`).
+4. If active schema exists and graph has new types → merge as superset, deactivate old, save new as active (`evolved`).
+5. If active schema already covers graph → no-op.
 
 **Active-only enforcement:**
 - `schema_name` is **not** exposed as a parameter in extract, search, or RAG operations
 - All operations use the active schema for the partition automatically
 - `schema_name` only appears in the Graph Schema CRUD mutations/queries (it's the DynamoDB range key for managing schemas)
 - When a new schema is inserted or an old one is activated via `insertUpdateGraphSchema`, the previously active schema is automatically deactivated
+- **Old versions are deactivated, not deleted** — full version history is preserved in DynamoDB
+
+**Validation (2026-03-30, see `test_schema_evolution_live.py`):**
+- 5 documents (snowboard products) from `kge-documents` for partition `gpt#nestaging`
+- First record (no active schema) → LLM discovered `Product, Category, Tag, Vendor` + 4 relationships, saved as `captured_*`
+- 20 subsequent product records → **100% Phase 1 hit rate** (zero LLM calls), reused active schema
+- Novel text (synthetic space-domain) → Phase 2 fired, schema evolved 4→9 nodes, 4→7 rels as superset, old version deactivated, new version `evolved_*` saved as active
 
 **Schema format** uses `neo4j-graphrag-python` native types (not custom dicts):
 
@@ -626,8 +659,10 @@ sequenceDiagram
 
 ### Known Gaps
 
-1. **Extraction not validated end-to-end** - pipeline logic exists but no integration test confirms actual Neo4j writes
+1. ~~**Extraction not validated end-to-end**~~ **VALIDATED**: WooCommerce-driven extraction tests (`test_woocommerce_extract.py`) and live schema evolution tests (`test_schema_evolution_live.py`) confirm real Neo4j writes and post-extraction schema capture against partition `gpt#nestaging`.
 2. ~~**Async event loop handling**~~ **FIXED**: `nest_asyncio.apply()` + `_run_async()` helper handles nested event loops. `_SuppressEventLoopClosedFilter` suppresses harmless httpx cleanup noise. GraphQL handler runs in `ThreadPoolExecutor` to avoid blocking FastAPI's event loop.
+3. **Vector index creation is manual** - `create_vector_index()` exists on `GraphRAGUtil` but is not called automatically after first extraction. Operators must create the `vector` index on `Chunk(embedding)` once per Neo4j instance, or search returns `"No index with name vector found"`. Consider auto-creation hook on first extract.
+4. **APOC requirement for graph schema read** - `SchemaFromExistingGraphExtractor` requires `apoc.meta.data()`. On instances without APOC, the engine automatically falls back to LLM-based discovery from the extraction text. Production Neo4j instances should install APOC for cheaper, deterministic schema reads.
 
 ---
 
@@ -645,6 +680,10 @@ sequenceDiagram
 | `text2cypher` | `Text2CypherRetriever` | LLM converts natural language to Cypher |
 | `vector_cypher` | `VectorCypherRetriever` | Vector search + custom Cypher traversal |
 | `hybrid` | `HybridRetriever` | Combined vector + fulltext search |
+
+**Result formatting**: All 4 modes now accept `is_result_formatter` (default `True`). When enabled, `GraphRAGUtil.default_record_formatter()` flattens Neo4j `Node`/`Relationship` objects into structured dicts with `element_id`, `label`/`type`, and `properties` — stripping any `*embedding*` properties to keep payloads small. Set `is_result_formatter=False` to receive raw retriever results.
+
+**vector_cypher default query**: Updated to `MATCH (node)<-[:FROM_CHUNK]-(rel_node) RETURN rel_node, score` — returns the entity nodes linked to matching chunks, not the chunks themselves.
 
 **GraphQL interface** ([schema.py](../knowledge_graph_engine/handlers/schema.py)):
 
@@ -749,32 +788,33 @@ def decommission_tenant(partition_key):
 
 ## Phase 6: Testing & Validation
 
-**Status**: PARTIAL
+**Status**: SUBSTANTIAL — unit + integration coverage in place; multi-tenant isolation still needed
 
 ### Current Test Coverage
 
-| Test File | What's Covered | Status |
-|-----------|---------------|--------|
+| Test File | What's Covered | Type |
+|-----------|---------------|------|
 | [test_extract.py](../tests/test_extract.py) | Extractor init, validation, SchemaResolver dict conversion, PartitionManager, ConnectionManager cache | Unit |
 | [test_search.py](../tests/test_search.py) | Vector search resolution, RAG resolution (mocked) | Unit |
 | [test_helpers.py](../tests/test_helpers.py) | Normalization (Decimal, dict, None), listener info, CSV parsing | Unit |
-| [test_import.py](../tests/test_import.py) | Package import, engine class, deploy, partition manager, config, lazy model imports, handler imports (12 tests) | Smoke |
-| [test_module_hardening.py](../tests/test_module_hardening.py) | Filter composition, listener context flattening, active-record tiebreaker, request UUID generation, config reinit (7 tests) | Unit |
+| [test_import.py](../tests/test_import.py) | Package import, engine class, deploy, partition manager, config, lazy model imports, handler imports | Smoke |
+| [test_module_hardening.py](../tests/test_module_hardening.py) | Filter composition, listener context flattening, active-record tiebreaker, request UUID generation, config reinit | Unit |
+| [test_integration.py](../tests/test_integration.py) | Engine init, DynamoDB table existence, ping query, Neo4j instance registration via GraphQL | Integration |
+| [test_daemon.py](../tests/test_daemon.py) | FastAPI daemon mode, JWT auth, GraphQL endpoint, background extract endpoint | Integration |
+| [test_schema_evolution_live.py](../tests/test_schema_evolution_live.py) | Initial schema capture, two-phase coverage check (text + LLM), superset merge, version history, LLM fallback when APOC missing | Integration |
+| [test_search_rag.py](../tests/test_search_rag.py) | All 4 search modes + RAG via GraphQL against real Neo4j | Integration |
+| [test_woocommerce_extract.py](../tests/test_woocommerce_extract.py) | End-to-end extraction: WooCommerce product → text → Neo4j graph | Integration |
 
 ### Missing Test Coverage
 
 | Category | Priority | What's Needed |
 |----------|:---:|---|
-| **Multi-tenant isolation** | Critical | Verify data in tenant A invisible to tenant B |
-| **End-to-end extraction** | Critical | Real text --> Neo4j graph --> verify nodes/relationships |
-| **Schema persistence cycle** | High | Save schema --> load schema --> extract with loaded schema |
-| **All 4 search modes** | High | Each mode against real Neo4j with test data |
-| **RAG pipeline** | High | Full RAG flow: extract --> search --> generate answer |
-| **Connection lifecycle** | Medium | Driver creation, caching, close, reconnect |
-| **Error handling** | Medium | Extraction failures, missing Neo4j instance, invalid schema |
-| **Cache invalidation** | Medium | Mutation triggers correct cascading purge |
-| **Async extraction** | Medium | `async_extract_knowledge_graph` event handler |
-| **Compatibility layer** | Low | Tests run with stub modules (no real neo4j) |
+| **Multi-tenant isolation** | Critical | Verify data in tenant A invisible to tenant B (cross-partition leakage check) |
+| **Vector index auto-creation** | High | After first extract, verify `vector` index exists OR auto-create on extract |
+| **Connection lifecycle stress** | Medium | Driver creation, caching, close, reconnect under concurrent load |
+| **Error handling & rollback** | Medium | Extraction failures, missing Neo4j instance, invalid schema, transient connection drops |
+| **Cache invalidation cascading** | Medium | Mutation triggers correct cascading purge across `document` → `request`, `graph_schema` → `document` |
+| **Compatibility layer (stubs)** | Low | Tests run with `_compat.py` stubs (no real neo4j/silvaengine deps) |
 
 ### Test Infrastructure Needed
 
@@ -801,42 +841,43 @@ def tenant_graph_rag(neo4j_driver):
 
 | Component | Code Exists | Unit Tests | Integration Tests | Production Ready |
 |-----------|:---:|:---:|:---:|:---:|
-| Config & initialization | Yes | No | No | Needs validation |
-| Neo4jConnectionManager | Yes | Yes | No | Needs real Neo4j test |
+| Config & initialization | Yes | Yes | Yes | Ready |
+| Neo4jConnectionManager | Yes | Yes | Yes (via integration) | Ready |
 | PartitionManager | Yes | Yes | - | Ready |
-| SchemaResolver (active-only) | Yes | Partial | No | Needs all modes tested |
-| Extractor | Yes | Partial | No | Needs E2E validation |
-| GraphRAGUtil | Yes | Partial | No | Needs real Neo4j test |
-| CustomNeo4jWriter | Yes | No | No | Needs validation |
-| SearchHandler (4 modes) | Yes | Partial | No | Needs real Neo4j test |
-| RAGHandler | Yes | Partial | No | Needs real Neo4j test |
-| DynamoDB models (6) | Yes | No | No | Needs CRUD validation |
+| SchemaResolver (active-only + evolution) | Yes | Yes | Yes | Ready |
+| Extractor + post-extraction evolve | Yes | Yes | Yes | Ready |
+| GraphRAGUtil + record formatter | Yes | Partial | Yes | Ready |
+| CustomNeo4jWriter | Yes | No | Yes (via WooCommerce extract) | Ready |
+| SearchHandler (4 modes) | Yes | Partial | Yes | Ready |
+| RAGHandler | Yes | Partial | Yes | Ready |
+| DynamoDB models (5) | Yes | Partial | Yes (table existence) | Ready |
 | Batch loaders | Yes | No | No | Needs validation |
-| Cache (CascadingCachePurger) | Yes | No | No | Needs validation |
-| GraphQL schema | Yes | No | No | Needs contract check |
-| Mutations (5) | Yes | No | No | Needs validation |
-| Queries (4) | Yes | No | No | Needs validation |
-| Types (6) | Yes | No | No | Needs shape alignment |
+| Cache (CascadingCachePurger) | Yes | Partial | No | Needs invalidation test |
+| GraphQL schema | Yes | No | Yes | Ready |
+| Mutations (4) | Yes | No | Yes | Ready |
+| Queries (3) | Yes | No | Yes | Ready |
+| Types (6) | Yes | No | Yes | Ready |
+| FastAPI daemon mode | Yes | No | Yes | Ready |
+| JWT auth (local + Cognito) | Yes | No | Partial | Local: ready, Cognito: needs prod test |
+| Background extract endpoint | Yes | No | Yes | Ready |
 | Compatibility layer | Yes | Implicit | - | Working |
-| Entity extractor (fallback) | Yes | No | No | Low priority |
+| Entity extractor (fallback) | Yes | No | Yes (via E2E test) | Working |
+| Vector index auto-creation | No | - | - | **Manual step required** |
+| Multi-tenant isolation tests | No | - | - | **Missing — critical gap** |
 
 ### Code Quality Issues
 
-1. **`queries/document.py` line 32-33**: `resolve_document_list` shadows the imported function of the same name - will cause infinite recursion:
-   ```python
-   def resolve_document_list(info, **kwargs):
-       return resolve_document_list(info, **kwargs)  # calls itself!
-   ```
+1. ~~**`queries/document.py` recursive call**~~ **FIXED**: Uses aliased imports — `from ..models.document import resolve_document_list as _resolve_document_list` and delegates via `_resolve_document_list(info, **kwargs)`.
 
 2. ~~**`models/request.py`**: Still uses `is_similarity_search`~~ **FIXED**: Uses `search_mode`. Auto-generates `request_uuid` when not provided.
 
-3. ~~**`schema.py` search field**: Missing parameters~~ **FIXED**: All search/rag/extract parameters now aligned with handlers
+3. ~~**`schema.py` search field**: Missing parameters~~ **FIXED**: All search/rag/extract parameters now aligned with handlers.
 
-4. ~~**`schema.py` rag field**: Missing parameters~~ **FIXED**: All RAG parameters now exposed
+4. ~~**`schema.py` rag field**: Missing parameters~~ **FIXED**: All RAG parameters now exposed.
 
-5. **`ExtractResultType.result`**: Defined as `result = JSONCamelCase` (missing parentheses) - should be `result = Field(JSONCamelCase)` or `result = JSONCamelCase()`
+5. ~~**`ExtractResultType.result` field definition**~~ **FIXED**: Now `result = Field(JSONCamelCase)`.
 
-6. ~~**Filter bug in list resolvers**~~ **FIXED**: `the_filters &= status_filter` crashed when `the_filters` was `None`. All list resolvers (document, graph_schema, neo4j_instance, request) now use safe composition: `the_filters = status_filter if the_filters is None else the_filters & status_filter`.
+6. ~~**Filter bug in list resolvers**~~ **FIXED**: All list resolvers (document, graph_schema, neo4j_instance, request) now use safe composition: `the_filters = status_filter if the_filters is None else the_filters & status_filter`.
 
 7. ~~**`resolve_graph_schema` missing type conversion**~~ **FIXED**: Now wraps with `get_graph_schema_type()`, consistent with all other single-entity resolvers.
 
@@ -845,6 +886,14 @@ def tenant_graph_rag(neo4j_driver):
 9. ~~**`CACHE_RELATIONSHIPS` crash in purge loop**~~ **FIXED**: `CascadingCachePurger` now handles both plain strings and dicts in the children list.
 
 10. ~~**`OllamaEmbeddings` crash when unavailable**~~ **FIXED**: Raises clear `ValueError` with install instructions when `embedding_provider="ollama"` but the import failed.
+
+11. ~~**`_load_active_schema` silently failing via `GraphSchema.from_dict`**~~ **FIXED** (2026-03-30): `GraphSchema.from_dict()` does not exist — it's a Pydantic model. Replaced with `GraphSchema.model_validate(raw)` after converting `MapAttribute` via `.as_dict()`. Targeted exception handling now only silences `DoesNotExist`; other errors are logged at WARNING.
+
+12. ~~**`evolve_schema_from_graph` failed on instances without APOC**~~ **FIXED** (2026-03-30): Now accepts `text` parameter and falls back to `_discover_schema(text)` (LLM) when `SchemaFromExistingGraphExtractor` raises (e.g., `apoc.meta.data` not registered). Caller in `extractor.py` passes the extracted text.
+
+13. **`schema.py` exposes both `search_type` and `search_mode`**: Backward-compat alias — `search_type` is mapped to `search_mode` in [search.py](../knowledge_graph_engine/queries/search.py). Plan to deprecate `search_type` once all consumers migrate.
+
+14. **`print()` in `default_record_formatter`**: [graph_rag_util.py](../knowledge_graph_engine/utils/graph_rag_util.py) has a leftover `print(f"default_record_formatter metadata: {metadata}")` — should be `logger.debug(...)` or removed before production.
 
 ### GraphQL Schema vs Handler Parameters (Aligned)
 
@@ -860,12 +909,14 @@ def tenant_graph_rag(neo4j_driver):
 
 ## Immediate Priorities
 
-### 1. Fix Code Quality Issues (Blocking)
+### 1. ~~Fix Code Quality Issues~~ DONE
 
-- [ ] Fix `queries/document.py` recursive import bug
-- [ ] Fix `ExtractResultType.result` field definition
-- [ ] Fix `schema.py` neo4j_instance resolver import path
-- [ ] Update `RequestModel.is_similarity_search` to `search_mode`
+- [x] `queries/document.py` recursive bug
+- [x] `ExtractResultType.result` field definition
+- [x] `schema.py` neo4j_instance resolver import path
+- [x] `RequestModel.is_similarity_search` → `search_mode`
+- [x] `GraphSchema.from_dict` → `model_validate` in `_load_active_schema`
+- [x] APOC fallback in `evolve_schema_from_graph`
 
 ### 2. ~~Align GraphQL Contract~~ DONE
 
@@ -874,24 +925,41 @@ def tenant_graph_rag(neo4j_driver):
 - [x] Extract parameters aligned (removed `schema_name`, `partition_key` from context)
 - [x] Active-only pattern enforced: no `schema_name` in search/rag/extract
 
-### 3. Integration Test Infrastructure (High)
+### 3. Operational Hardening (High)
 
-- [ ] Set up Neo4j test fixture (Docker container or embedded)
-- [ ] Set up DynamoDB local for model tests
-- [ ] Write end-to-end extraction test: text -> Neo4j -> verify graph
-- [ ] Write multi-tenant isolation test
+- [ ] **Auto-create vector index after first extract** — currently a manual `CREATE VECTOR INDEX vector ...` step. Add a one-shot bootstrap in `Extractor.extract()` or expose a `bootstrap_indexes` mutation.
+- [ ] **Embedding dimension config** — hardcoded `1536` for OpenAI; surface `embedding_dimensions` setting so Ollama/`nomic-embed-text` (768) works without manual index recreation.
+- [ ] **Remove `print()` from `default_record_formatter`** — replace with `logger.debug`.
+- [ ] **Deprecate `search_type` alias** — keep `search_mode` only after consumer migration.
 
-### 4. Model & Cache Validation (Medium)
+### 4. Multi-Tenant Isolation Tests (Critical)
 
-- [ ] Test all 6 model CRUD operations
-- [ ] Validate cache invalidation cascading
-- [ ] Test batch loaders with real data
+- [ ] Spin up 2 tenant Neo4j instances in test fixtures
+- [ ] Extract distinct data into each
+- [ ] Query each tenant — verify zero cross-leakage at:
+  - Schema introspection level (`db.labels()`)
+  - Vector search results
+  - text2cypher results (LLM should see only the tenant's schema)
+  - RAG context
 
-### 5. Neo4j Provisioning Strategy Decision (Medium)
+### 5. Model & Cache Validation (Medium)
 
-- [ ] Choose between Docker Compose / K8s / managed
-- [ ] Prototype tenant provisioning flow
-- [ ] Document operational procedures
+- [ ] Test all 5 model CRUD operations through GraphQL
+- [ ] Validate cache invalidation cascading: mutation → purge children → next read repopulates
+- [ ] Test batch loaders with real data under concurrent loads
+
+### 6. Neo4j Provisioning Strategy Decision (Medium)
+
+- [ ] Choose between Docker Compose / K8s / managed Aura
+- [ ] Prototype tenant provisioning flow (registration via `InsertUpdateNeo4jInstance`)
+- [ ] Document operational procedures (backup/restore per tenant, idle shutdown policy)
+- [ ] Decide on APOC installation strategy (required for cheap graph schema reads)
+
+### 7. Observability (Medium)
+
+- [ ] Structured logging with `partition_key` correlation
+- [ ] Metrics: extraction rate, schema evolution events, search latency per mode
+- [ ] Document process error dashboard via `kge-document_process_errors`
 
 ---
 
@@ -945,7 +1013,15 @@ def tenant_graph_rag(neo4j_driver):
 | 2026-03 | GraphRAGUtil caching per partition | `Config._graph_rag_utils` cache with invalidation via `clear_graph_rag_util()` on driver close | Active |
 | 2026-03 | Full compatibility shim layer | `_compat.py` stubs for `neo4j`, `neo4j-graphrag`, `silvaengine_dynamodb_base`, `silvaengine_utility` (including `Graphql` base class) | Active |
 | 2026-03 | Multi-active tiebreaker | When multiple active records exist, `get_active_*` chooses the most recently updated one and logs a warning | Active |
-| TBD | Neo4j provisioning strategy | Docker vs K8s vs managed | Pending |
+| 2026-03-30 | Two-phase schema coverage check | Phase 1 (free text match against active labels) catches ~100% of in-domain records; Phase 2 (LLM) only fires when text doesn't match — avoids LLM cost for typical batch loads | Active |
+| 2026-03-30 | Schema versions are supersets, deactivated not deleted | New version always merges new types on top of old; full version history preserved in DynamoDB by status flag. Lets operators roll back or audit drift. | Active |
+| 2026-03-30 | LLM fallback for graph schema reads | `SchemaFromExistingGraphExtractor` requires APOC. When unavailable, `evolve_schema_from_graph(text)` falls back to `_discover_schema(text)` so the pipeline still captures an initial schema. | Active |
+| 2026-04-15 | Default record formatter for retrievers | `GraphRAGUtil.default_record_formatter` flattens Neo4j Node/Relationship into structured dicts, strips embedding properties. `is_result_formatter=True` default on all 4 search modes. | Active |
+| 2026-04-15 | `vector_cypher` default query traverses to entities | Default changed to `MATCH (node)<-[:FROM_CHUNK]-(rel_node) RETURN rel_node, score` — returns linked entities rather than raw chunks | Active |
+| 2026-04 | Drop `data_source` entity | Replaced by free-form `document_source` string field on `DocumentModel`. Removes a 4-file CRUD surface (`models/`, `types/`, `mutations/`, `queries/`) for an under-used registry. | Active |
+| TBD | Neo4j provisioning strategy | Docker vs K8s vs managed Aura | Pending |
+| TBD | APOC installation policy | Required for cheap graph schema reads; LLM fallback works but costs tokens | Pending |
+| TBD | Vector index auto-bootstrap | One-shot create on first extract vs explicit mutation | Pending |
 | TBD | Cache invalidation rules | Real query pattern validation needed | Pending |
 
 ---
@@ -969,4 +1045,4 @@ def tenant_graph_rag(neo4j_driver):
 
 ---
 
-*Last Updated: 2026-03-28*
+*Last Updated: 2026-05-13*
