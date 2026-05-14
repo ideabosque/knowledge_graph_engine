@@ -69,23 +69,17 @@ def get_request_type(info: ResolveInfo, request: RequestModel) -> RequestType:
 )
 def resolve_request_list(info: ResolveInfo, **kwargs: Any) -> Any:
     partition_key = info.context.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required in context")
+
     search_mode = kwargs.get("search_mode")
 
-    the_filters = None
+    inquiry_funct = RequestModel.query
+    count_funct = RequestModel.count
+    args = [partition_key]
+
     if search_mode is not None:
-        the_filters = RequestModel.search_mode == search_mode
-
-    if partition_key:
-        inquiry_funct = RequestModel.query
-        count_funct = RequestModel.count
-        args = [partition_key]
-    else:
-        inquiry_funct = RequestModel.scan
-        count_funct = RequestModel.count
-        args = []
-
-    if the_filters is not None:
-        args.append(the_filters)
+        args.append(RequestModel.search_mode == search_mode)
 
     return inquiry_funct, count_funct, args
 

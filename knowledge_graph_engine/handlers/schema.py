@@ -110,7 +110,6 @@ class Query(ObjectType):
     search = Field(
         SearchResultType,
         query_text=String(required=True),
-        search_type=String(required=False),
         search_mode=String(required=False),
         index_name=String(required=False),
         retrieval_query=String(required=False),

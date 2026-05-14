@@ -117,3 +117,92 @@ def test_config_reinitialize_replaces_settings(mock_logger):
         assert Config.get_setting()["jwt_secret_key"] == "two"
     finally:
         Config.reset()
+
+
+@pytest.mark.unit
+def test_resolve_embedding_dimensions_known_models():
+    """Known OpenAI/Ollama embedding models resolve to correct dimensions."""
+    from knowledge_graph_engine.utils.graph_rag_util import resolve_embedding_dimensions
+
+    assert resolve_embedding_dimensions("text-embedding-3-small") == 1536
+    assert resolve_embedding_dimensions("text-embedding-3-large") == 3072
+    assert resolve_embedding_dimensions("text-embedding-ada-002") == 1536
+    assert resolve_embedding_dimensions("nomic-embed-text") == 768
+    assert resolve_embedding_dimensions("mxbai-embed-large") == 1024
+    assert resolve_embedding_dimensions("all-minilm") == 384
+
+
+@pytest.mark.unit
+def test_resolve_embedding_dimensions_override_wins():
+    """Explicit override always takes precedence over the model lookup."""
+    from knowledge_graph_engine.utils.graph_rag_util import resolve_embedding_dimensions
+
+    # Override beats the known mapping
+    assert resolve_embedding_dimensions("text-embedding-3-small", override=2048) == 2048
+    # Override resolves unknown model
+    assert resolve_embedding_dimensions("custom-model-xyz", override=512) == 512
+
+
+@pytest.mark.unit
+def test_resolve_embedding_dimensions_unknown_defaults_to_1536(caplog):
+    """Unknown model without override falls back to 1536 and logs a warning."""
+    from knowledge_graph_engine.utils.graph_rag_util import resolve_embedding_dimensions
+
+    with caplog.at_level(logging.WARNING):
+        result = resolve_embedding_dimensions("totally-fictional-model")
+
+    assert result == 1536
+    assert any("Unknown embedding model" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
+def test_list_resolvers_raise_when_partition_key_missing():
+    """List resolvers must raise ValueError when partition_key is missing from context.
+
+    Prevents the silent Model.scan() fallback that would return cross-partition data.
+    """
+    from knowledge_graph_engine.models.document import resolve_document_list as doc_list
+    from knowledge_graph_engine.models.graph_schema import resolve_graph_schema_list as gs_list
+    from knowledge_graph_engine.models.neo4j_instance import resolve_neo4j_instance_list as ni_list
+    from knowledge_graph_engine.models.request import resolve_request_list as req_list
+
+    # The list resolvers are wrapped by `resolve_list_decorator` which logs on
+    # error before re-raising, so the context needs a logger to reach the raise.
+    info = SimpleNamespace(context={"logger": logging.getLogger("test")})
+
+    for resolver in (doc_list, gs_list, ni_list, req_list):
+        with pytest.raises(ValueError, match="partition_key is required"):
+            resolver(info)
+
+
+@pytest.mark.unit
+def test_fastapi_get_partition_key_requires_part_id():
+    """FastAPI _get_partition_key must raise 400 when Part-Id header is absent.
+
+    A bare endpoint_id would hash to its own partition bucket, hiding data
+    written under the proper `endpoint#part_id` key.
+    """
+    from fastapi import HTTPException
+    from knowledge_graph_engine.handlers.fastapi_app import _get_partition_key
+
+    request = SimpleNamespace(headers={})  # no Part-Id
+
+    with pytest.raises(HTTPException) as excinfo:
+        _get_partition_key("my-endpoint", request)
+
+    assert excinfo.value.status_code == 400
+    assert "Part-Id" in excinfo.value.detail
+
+
+@pytest.mark.unit
+def test_fastapi_get_partition_key_accepts_part_id():
+    """When Part-Id is present, _get_partition_key builds the full key."""
+    from knowledge_graph_engine.handlers.fastapi_app import _get_partition_key
+
+    request = SimpleNamespace(headers={"Part-Id": "tenant-a"})
+    pk, part_id = _get_partition_key("my-endpoint", request)
+
+    assert pk == "my-endpoint#tenant-a"
+    assert part_id == "tenant-a"
+
+

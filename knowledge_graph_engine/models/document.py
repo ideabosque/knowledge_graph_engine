@@ -112,41 +112,37 @@ def resolve_document(
 )
 def resolve_document_list(info: ResolveInfo, **kwargs: Any) -> Any:
     partition_key = info.context.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required in context")
+
     document_source = kwargs.get("document_source")
     document_external_id = kwargs.get("document_external_id")
     statuses = kwargs.get("statuses")
     updated_at_gt = kwargs.get("updated_at_gt")
     updated_at_lt = kwargs.get("updated_at_lt")
 
-    args = []
-    inquiry_funct = DocumentModel.scan
-    count_funct = DocumentModel.count
-
-    if partition_key:
-        if updated_at_gt is not None and updated_at_lt is not None:
-            range_key_condition = DocumentModel.updated_at.between(
-                updated_at_gt, updated_at_lt
-            )
-        elif updated_at_gt is not None:
-            range_key_condition = DocumentModel.updated_at > updated_at_gt
-        elif updated_at_lt is not None:
-            range_key_condition = DocumentModel.updated_at < updated_at_lt
-        else:
-            range_key_condition = None
-
-        if document_external_id and range_key_condition is None:
-            inquiry_funct = DocumentModel.document_external_id_index.query
-            args = [
-                partition_key,
-                DocumentModel.document_external_id == document_external_id,
-            ]
-            count_funct = DocumentModel.document_external_id_index.count
-        else:
-            inquiry_funct = DocumentModel.updated_at_index.query
-            count_funct = DocumentModel.updated_at_index.count
-            args = [partition_key, range_key_condition]
+    if updated_at_gt is not None and updated_at_lt is not None:
+        range_key_condition = DocumentModel.updated_at.between(
+            updated_at_gt, updated_at_lt
+        )
+    elif updated_at_gt is not None:
+        range_key_condition = DocumentModel.updated_at > updated_at_gt
+    elif updated_at_lt is not None:
+        range_key_condition = DocumentModel.updated_at < updated_at_lt
     else:
-        args = [partition_key] if partition_key else []
+        range_key_condition = None
+
+    if document_external_id and range_key_condition is None:
+        inquiry_funct = DocumentModel.document_external_id_index.query
+        count_funct = DocumentModel.document_external_id_index.count
+        args = [
+            partition_key,
+            DocumentModel.document_external_id == document_external_id,
+        ]
+    else:
+        inquiry_funct = DocumentModel.updated_at_index.query
+        count_funct = DocumentModel.updated_at_index.count
+        args = [partition_key, range_key_condition]
 
     the_filters = None
     if document_source:

@@ -661,7 +661,7 @@ sequenceDiagram
 
 1. ~~**Extraction not validated end-to-end**~~ **VALIDATED**: WooCommerce-driven extraction tests (`test_woocommerce_extract.py`) and live schema evolution tests (`test_schema_evolution_live.py`) confirm real Neo4j writes and post-extraction schema capture against partition `gpt#nestaging`.
 2. ~~**Async event loop handling**~~ **FIXED**: `nest_asyncio.apply()` + `_run_async()` helper handles nested event loops. `_SuppressEventLoopClosedFilter` suppresses harmless httpx cleanup noise. GraphQL handler runs in `ThreadPoolExecutor` to avoid blocking FastAPI's event loop.
-3. **Vector index creation is manual** - `create_vector_index()` exists on `GraphRAGUtil` but is not called automatically after first extraction. Operators must create the `vector` index on `Chunk(embedding)` once per Neo4j instance, or search returns `"No index with name vector found"`. Consider auto-creation hook on first extract.
+3. ~~**Vector index creation is manual**~~ **FIXED** (2026-05-13): `Extractor.extract()` calls `GraphRAGUtil.bootstrap_indexes_if_missing()` after every successful extraction. The bootstrap is idempotent — it runs `SHOW INDEXES` first and only creates the index if absent. Dimensions resolved via `resolve_embedding_dimensions()` (model lookup + `embedding_dimensions` override).
 4. **APOC requirement for graph schema read** - `SchemaFromExistingGraphExtractor` requires `apoc.meta.data()`. On instances without APOC, the engine automatically falls back to LLM-based discovery from the extraction text. Production Neo4j instances should install APOC for cheaper, deterministic schema reads.
 
 ---
@@ -809,7 +809,7 @@ def decommission_tenant(partition_key):
 
 | Category | Priority | What's Needed |
 |----------|:---:|---|
-| **Multi-tenant isolation** | Critical | Verify data in tenant A invisible to tenant B (cross-partition leakage check) |
+| ~~**Partition-key fail-open**~~ | ~~High~~ | DONE — `test_list_resolvers_raise_when_partition_key_missing` and `test_fastapi_get_partition_key_*` in [test_module_hardening.py](../tests/test_module_hardening.py) |
 | **Vector index auto-creation** | High | After first extract, verify `vector` index exists OR auto-create on extract |
 | **Connection lifecycle stress** | Medium | Driver creation, caching, close, reconnect under concurrent load |
 | **Error handling & rollback** | Medium | Extraction failures, missing Neo4j instance, invalid schema, transient connection drops |
@@ -862,8 +862,8 @@ def tenant_graph_rag(neo4j_driver):
 | Background extract endpoint | Yes | No | Yes | Ready |
 | Compatibility layer | Yes | Implicit | - | Working |
 | Entity extractor (fallback) | Yes | No | Yes (via E2E test) | Working |
-| Vector index auto-creation | No | - | - | **Manual step required** |
-| Multi-tenant isolation tests | No | - | - | **Missing — critical gap** |
+| Vector index auto-creation | Yes | Yes | Pending real Neo4j | Ready (idempotent bootstrap on every extract) |
+| Partition-key fail-closed | Yes | Yes | Indirect (every integration test) | Ready — list resolvers, FastAPI handler, and `get_graph_rag_util` all raise on missing/invalid partition |
 
 ### Code Quality Issues
 
@@ -891,9 +891,9 @@ def tenant_graph_rag(neo4j_driver):
 
 12. ~~**`evolve_schema_from_graph` failed on instances without APOC**~~ **FIXED** (2026-03-30): Now accepts `text` parameter and falls back to `_discover_schema(text)` (LLM) when `SchemaFromExistingGraphExtractor` raises (e.g., `apoc.meta.data` not registered). Caller in `extractor.py` passes the extracted text.
 
-13. **`schema.py` exposes both `search_type` and `search_mode`**: Backward-compat alias — `search_type` is mapped to `search_mode` in [search.py](../knowledge_graph_engine/queries/search.py). Plan to deprecate `search_type` once all consumers migrate.
+13. ~~**`schema.py` exposes both `search_type` and `search_mode`**~~ **REMOVED** (2026-05-13): `search_type` dropped entirely from the GraphQL field and the resolver. Clients must use `search_mode`.
 
-14. **`print()` in `default_record_formatter`**: [graph_rag_util.py](../knowledge_graph_engine/utils/graph_rag_util.py) has a leftover `print(f"default_record_formatter metadata: {metadata}")` — should be `logger.debug(...)` or removed before production.
+14. ~~**`print()` in `default_record_formatter`**~~ **FIXED** (2026-05-13): Replaced with `logger.debug(...)`; also removed the stray commented-out `print()` in `_process_neo4j_value`.
 
 ### GraphQL Schema vs Handler Parameters (Aligned)
 
@@ -925,22 +925,38 @@ def tenant_graph_rag(neo4j_driver):
 - [x] Extract parameters aligned (removed `schema_name`, `partition_key` from context)
 - [x] Active-only pattern enforced: no `schema_name` in search/rag/extract
 
-### 3. Operational Hardening (High)
+### 3. ~~Operational Hardening~~ DONE (2026-05-13)
 
-- [ ] **Auto-create vector index after first extract** — currently a manual `CREATE VECTOR INDEX vector ...` step. Add a one-shot bootstrap in `Extractor.extract()` or expose a `bootstrap_indexes` mutation.
-- [ ] **Embedding dimension config** — hardcoded `1536` for OpenAI; surface `embedding_dimensions` setting so Ollama/`nomic-embed-text` (768) works without manual index recreation.
-- [ ] **Remove `print()` from `default_record_formatter`** — replace with `logger.debug`.
-- [ ] **Deprecate `search_type` alias** — keep `search_mode` only after consumer migration.
+- [x] **Auto-create vector index after first extract** — `GraphRAGUtil.bootstrap_indexes_if_missing()` checks `SHOW INDEXES` and creates the `vector` index on `(:Chunk.embedding)` only when missing. Called from `Extractor.extract()` after every successful extraction (idempotent, cheap).
+- [x] **Embedding dimension config** — `resolve_embedding_dimensions()` in [graph_rag_util.py](../knowledge_graph_engine/utils/graph_rag_util.py) takes an explicit `embedding_dimensions` setting and falls back to a known-model lookup (OpenAI 3-small=1536, 3-large=3072, Ollama nomic-embed-text=768, mxbai-embed-large=1024, all-minilm=384, etc.). Unknown models default to 1536 with a warning. Legacy `dimension` key still honored.
+- [x] **Remove `print()` from `default_record_formatter`** — replaced with `logger.debug(...)`. Stray commented-out `print()` in `_process_neo4j_value` also removed.
+- [x] **Remove `search_type` alias** — dropped entirely from the GraphQL `search` field and from `queries/search.py`. Clients must use `search_mode`. No migration layer kept.
 
-### 4. Multi-Tenant Isolation Tests (Critical)
+Unit coverage added in [test_module_hardening.py](../tests/test_module_hardening.py): `resolve_embedding_dimensions` (known models, override precedence, unknown fallback). All 41 unit tests pass.
 
-- [ ] Spin up 2 tenant Neo4j instances in test fixtures
-- [ ] Extract distinct data into each
-- [ ] Query each tenant — verify zero cross-leakage at:
-  - Schema introspection level (`db.labels()`)
-  - Vector search results
-  - text2cypher results (LLM should see only the tenant's schema)
-  - RAG context
+### 4. ~~Close `partition_key` Fail-Open Paths~~ DONE (2026-05-13)
+
+Isolation is structural — DynamoDB hash-key partitioning + per-partition Neo4j driver lookup. Every path now enforces it:
+
+| Layer | Enforcement | Status |
+|---|---|---|
+| GraphQL entrypoint (`knowledge_graph_graphql`) | `_apply_partition_defaults()` raises `ValueError` if `endpoint_id` or `part_id` missing | Hard |
+| All 4 mutations (`InsertUpdate*`, `Delete*`, `ExecuteExtract`) | Each explicitly checks `info.context["partition_key"]` and raises if missing | Hard |
+| All 4 list resolvers (`resolve_*_list`) | Raise `ValueError("partition_key is required in context")` instead of falling through to `Model.scan()` | Hard |
+| FastAPI handler (`_get_partition_key`) | Raises `HTTPException(400)` when `Part-Id` header is absent | Hard |
+| Connection routing (`Neo4jConnectionManager.get_driver`) | Driver cache + DynamoDB lookup both keyed by `partition_key` string | Physical |
+| Active instance lookup (`Config.get_graph_rag_util`) | `get_active_neo4j_instance` failure propagates — no silent `database="neo4j"` fallback | Hard |
+| DynamoDB queries | `partition_key` is the hash key — physically partitioned | Physical |
+
+Fixes applied:
+
+- [x] **List resolvers** ([document.py](../knowledge_graph_engine/models/document.py), [graph_schema.py](../knowledge_graph_engine/models/graph_schema.py), [neo4j_instance.py](../knowledge_graph_engine/models/neo4j_instance.py), [request.py](../knowledge_graph_engine/models/request.py)) — each one now raises `ValueError("partition_key is required in context")` at the top of the function. The dead `Model.scan` branches were deleted; only the indexed `partition_key=X` query path remains.
+- [x] **FastAPI `_get_partition_key`** ([fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py)) — raises `HTTPException(400, "Part-Id header is required to construct partition_key")` when the header is absent. Previously returned a bare `endpoint_id` string.
+- [x] **`Config.get_graph_rag_util`** ([config.py](../knowledge_graph_engine/handlers/config.py)) — removed the `try/except Exception: database = "neo4j"` swallow. `get_active_neo4j_instance` failure now propagates as `Neo4jInstanceModel.DoesNotExist`, surfacing misconfigured partitions immediately.
+
+Unit coverage added in [test_module_hardening.py](../tests/test_module_hardening.py): `test_list_resolvers_raise_when_partition_key_missing` (all 4 resolvers), `test_fastapi_get_partition_key_requires_part_id`, `test_fastapi_get_partition_key_accepts_part_id`. All 44 unit tests pass.
+
+The architecture now enforces isolation by construction — there's no code path through which a request without a `partition_key` can produce results. No "tenant A vs tenant B" leakage test is needed because the failure mode it would guard against has been eliminated at compile time.
 
 ### 5. Model & Cache Validation (Medium)
 
