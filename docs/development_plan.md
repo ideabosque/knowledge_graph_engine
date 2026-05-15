@@ -222,14 +222,127 @@ knowledge_graph_engine/
 
 All models use `partition_key` as hash key. Table prefix: `kge-`.
 
-| Table | Hash Key | Range Key | Purpose |
-|-------|----------|-----------|---------|
-| `kge-documents` | `partition_key` | `document_uuid` | Extracted document metadata |
-| `kge-graph_schemas` | `partition_key` | `schema_name` | Saved `GraphSchema` definitions |
-| `kge-data_sources` | `partition_key` | `data_source_name` | Data source configurations |
-| `kge-neo4j_instances` | `partition_key` | `instance_id` | Neo4j connection registry |
-| `kge-requests` | `partition_key` | `request_uuid` | Query/search request log |
-| `kge-document_process_errors` | `partition_key` | `process_error_uuid` | Extraction error tracking |
+| Table | Hash Key | Range Key | LSI(s) | Purpose |
+|-------|----------|-----------|--------|---------|
+| `kge-documents` | `partition_key` | `document_uuid` | `updated_at_index`, `document_external_id_index` | Extracted document metadata + chunk content |
+| `kge-graph_schemas` | `partition_key` | `schema_name` | `updated_at_index` | Versioned `GraphSchema` definitions; only one is `active` per partition |
+| `kge-neo4j_instances` | `partition_key` | `instance_id` | — | Neo4j connection registry; only one is `active` per partition |
+| `kge-requests` | `partition_key` | `request_uuid` | — | Query/search request audit log |
+| `kge-document_process_errors` | `partition_key` | `process_error_uuid` | — | Extraction error tracking, joined logically to documents via `(document_source, document_external_id)` |
+
+### Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    TenantPartition {
+        string endpoint_id
+        string part_id
+        string partition_key PK "endpoint_id and part_id joined"
+    }
+
+    DocumentModel {
+        string partition_key PK "hash key"
+        string document_uuid PK "range key"
+        string endpoint_id
+        string part_id
+        string document_source "free-form e.g. woocommerce"
+        string document_external_id "tenant-side ID, has LSI"
+        number chunk_index
+        string document_title
+        string content "truncated to 10K chars"
+        list   content_embedding "vector for Neo4j Chunk"
+        string status "active or processed or failed"
+        string updated_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    GraphSchemaModel {
+        string partition_key PK "hash key"
+        string schema_name PK "range key, e.g. captured_*, evolved_*"
+        string endpoint_id
+        string part_id
+        string schema_type "captured, evolved, user or auto"
+        map    schema_definition "GraphSchema as dict"
+        string source_text_hash
+        string neo4j_schema_string "rendered for text2cypher"
+        string status "active or inactive"
+        string updated_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    Neo4jInstanceModel {
+        string partition_key PK "hash key"
+        string instance_id PK "range key"
+        string endpoint_id
+        string part_id
+        string neo4j_uri "bolt URI"
+        string neo4j_username
+        string neo4j_password
+        string neo4j_database
+        string container_id "optional Docker container"
+        string status "active or inactive"
+        number max_connection_pool_size
+        datetime created_at
+        datetime updated_at
+    }
+
+    RequestModel {
+        string partition_key PK "hash key"
+        string request_uuid PK "range key"
+        string endpoint_id
+        string part_id
+        string user_query
+        string cypher_query "populated for text2cypher"
+        string search_mode "vector, text2cypher, vector_cypher or hybrid"
+        list   results
+        string updated_by
+        datetime created_at
+        datetime updated_at
+    }
+
+    DocumentProcessErrorModel {
+        string partition_key PK "hash key"
+        string process_error_uuid PK "range key"
+        string document_source
+        string document_external_id
+        number chunk_index
+        string error_message "truncated to 10K chars"
+        string process_status "failed"
+        number process_count
+        datetime created_at
+        datetime updated_at
+    }
+
+    Neo4jGraph {
+        string Chunk_id PK "lives in Neo4j not DynamoDB"
+        list   embedding "vector index target"
+        string text
+        string Entity_labels "from active schema"
+        string Relationships "FROM_CHUNK plus extracted edges"
+    }
+
+    TenantPartition ||--o{ DocumentModel              : owns
+    TenantPartition ||--o{ GraphSchemaModel           : owns
+    TenantPartition ||--o{ Neo4jInstanceModel         : owns
+    TenantPartition ||--o{ RequestModel               : owns
+    TenantPartition ||--o{ DocumentProcessErrorModel  : owns
+    TenantPartition ||--|| Neo4jGraph                 : routes_to_active_instance
+
+    GraphSchemaModel    ||--o{ DocumentModel              : constrains_extraction
+    Neo4jInstanceModel  ||--|| Neo4jGraph                 : physical_storage
+    DocumentModel       ||--o{ Neo4jGraph                 : extracts_into
+    DocumentModel       ||--o{ DocumentProcessErrorModel  : soft_join_by_source_and_external_id
+```
+
+**Notes on relationships**:
+- DynamoDB has no foreign keys — all relationships are *logical*, scoped through the shared `partition_key` hash key.
+- `TenantPartition` is not a stored entity; it's the conceptual root that every table is hash-keyed on. The `partition_key` value is `endpoint_id` and `part_id` joined with a `#` separator.
+- `GraphSchemaModel` and `Neo4jInstanceModel` enforce a "one active per partition" invariant via the `status` field. Inserting a new `active` row deactivates the previous one (see `_deactivate_current_active_*` helpers); old versions are preserved as `inactive`.
+- `Neo4jGraph` (Chunks, Entities, Relationships) lives in the tenant's Neo4j instance — *not* in DynamoDB. It's included in the diagram so the full data flow is visible: documents land in DynamoDB metadata + Neo4j graph, both keyed by the same partition.
+- `DocumentProcessErrorModel ↔ DocumentModel` is a soft join — extraction errors are written even when no `DocumentModel` row was created (e.g., extraction failed before persistence), so referential integrity is intentionally one-way.
+- Range-key suffix conventions used by the engine (not enforced by the schema): `document_uuid` is `doc-{timestamp}-{uuid8}`, `request_uuid` is `req-{timestamp}-{uuid8}`, `process_error_uuid` is `err-{timestamp}-{uuid8}`.
 
 ### Model Patterns (aligned with ai_agent_core_engine)
 
