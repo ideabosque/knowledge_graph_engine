@@ -1,519 +1,445 @@
-# Knowledge Graph Engine - Restructure Plan
+# Knowledge Graph Engine — Restructure Plan
 
-**Status**: Draft  
-**Date**: 2026-05-19  
+**Status**: Draft
+**Date**: 2026-05-19
 **Primary reference**: [data_model.md](./data_model.md)
+**Related**: [development_plan.md](./development_plan.md)
 
 ## Purpose
 
-This document turns the proposed v2 data model into an implementation plan that matches the current codebase.
+Turn the proposed v2 data model into an implementation plan that maps cleanly onto the current codebase. The plan is grounded in verified file paths and named symbols, so any reader can cross-check it against the repository.
 
-The repository today is still built around a **single active schema** and **single active Neo4j instance** per `partition_key`. The target model introduces **multiple knowledge types per tenant partition**, each with its own schema, Neo4j routing, data sources, documents, and request history.
+The repository today is built around **one active schema and one active Neo4j instance per `partition_key`**. The target model introduces **`KnowledgeTypeModel`** as a per-tenant sub-scope, with its own schema, Neo4j instance, data sources, documents, and request history.
 
-This plan is intentionally grounded in the current project layout:
+### Current code anchors
 
-- Runtime entrypoint: `knowledge_graph_engine/main.py`
-- GraphQL schema surface: `knowledge_graph_engine/handlers/schema.py`
-- Routing/state: `knowledge_graph_engine/handlers/config.py`, `knowledge_graph_engine/handlers/neo4j_connection_manager.py`
-- Knowledge workflows: `knowledge_graph_engine/handlers/extractor.py`, `knowledge_graph_engine/handlers/search_handler.py`, `knowledge_graph_engine/handlers/rag_handler.py`, `knowledge_graph_engine/handlers/schema_resolver.py`
-- Persistence: `knowledge_graph_engine/models/*.py`
-- REST daemon: `knowledge_graph_engine/handlers/fastapi_app.py`
+- Runtime entrypoint: [main.py](../knowledge_graph_engine/main.py) — `KnowledgeGraphEngine`, `_apply_partition_defaults()`
+- GraphQL surface: [handlers/schema.py](../knowledge_graph_engine/handlers/schema.py) — `Query`, `Mutations`, `type_class()`
+- Routing/state: [handlers/config.py](../knowledge_graph_engine/handlers/config.py), [handlers/neo4j_connection_manager.py](../knowledge_graph_engine/handlers/neo4j_connection_manager.py)
+- Knowledge workflows: [handlers/extractor.py](../knowledge_graph_engine/handlers/extractor.py), [handlers/search_handler.py](../knowledge_graph_engine/handlers/search_handler.py), [handlers/rag_handler.py](../knowledge_graph_engine/handlers/rag_handler.py), [handlers/schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py)
+- Persistence: [models/](../knowledge_graph_engine/models/)
+- REST daemon: [handlers/fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py)
+
+---
 
 ## What Must Change
 
-The current architecture assumes this scope:
+| Concern | Today | Target |
+|---|---|---|
+| Tenant scoping | `partition_key` (`endpoint_id#part_id`) | `(partition_key, knowledge_type_name)` |
+| Neo4j instance per partition | One active row | One active per `(partition_key, knowledge_type_name)` |
+| Graph schema per partition | One active row | One active per `(partition_key, knowledge_type_name)` |
+| Data source | Free-form `document_source` string on `DocumentModel` | First-class `DataSourceModel` row, FK from `DocumentModel.data_source_name` |
+| Documents / requests / errors | `partition_key`-scoped only | Also carry `knowledge_type_name` (and `data_source_name` where applicable) |
+| Driver and `GraphRAGUtil` caches | Keyed by `partition_key` | Keyed by `(partition_key, knowledge_type_name)` |
+| Vector index bootstrap | One per Neo4j instance | One per knowledge type's Neo4j instance |
 
-- one partition -> one active `Neo4jInstanceModel`
-- one partition -> one active `GraphSchemaModel`
-- documents and requests are only partition-scoped
-- `document_source` is a free-form string
+`DataSourceModel` was previously dropped from scope (see [development_plan.md Key Decisions Log → 2026-04](./development_plan.md#key-decisions-log)) in favor of the free-form `document_source` string. The v2 model re-introduces it as a first-class entity because connector config, audit trail, and re-ingestion need it.
 
-The v2 model requires this scope:
+---
 
-- one partition -> many `KnowledgeTypeModel` rows
-- one knowledge type -> one active Neo4j instance at a time
-- one knowledge type -> one active graph schema at a time
-- one knowledge type -> many active data sources
-- documents, requests, and process errors must all carry `knowledge_type_name`
-- documents and process errors should reference `data_source_name`
+## Key Design Decisions
 
-## Corrections to the Earlier Draft
+### 1. `KnowledgeTypeModel` is not active-singleton scoped
 
-The earlier `restructure_plan.md` was directionally right, but it had a few design contradictions that would cause rework if implemented as written.
+Multiple knowledge types may be active in the same partition at the same time (the whole point — one tenant can host `products` and `support_tickets` concurrently). `KnowledgeTypeModel.status` remains useful for soft-disable/archive, but there is **no** `get_active_knowledge_type(partition_key)` helper.
 
-### 1. `KnowledgeTypeModel` should not be active-singleton scoped
-
-The goal is to let one tenant host several concurrent domains such as `products`, `support_tickets`, and `internal_wiki`. That means:
-
-- multiple knowledge types may be active in the same partition at the same time
-- `KnowledgeTypeModel.status` is still useful for soft-disable/archive
-- there should **not** be a `get_active_knowledge_type(partition_key)` helper that assumes one active row per partition
-
-Recommended helper set:
+Helper set:
 
 - `get_knowledge_type(partition_key, knowledge_type_name)`
 - `get_knowledge_types_for_partition(partition_key, statuses=None)`
-- optional `require_active_knowledge_type(partition_key, knowledge_type_name)` for validation
+- `require_active_knowledge_type(partition_key, knowledge_type_name)` for validation
 
-### 2. `DataSourceModel` should support many active rows per knowledge type
+### 2. `DataSourceModel` supports many active rows per knowledge type
 
-`data_model.md` says a knowledge type ingests from many sources. That means multiple sources may be active simultaneously. So:
+A knowledge type may ingest from several sources simultaneously (`woocommerce_main`, `manual_csv`, `support_api`). There is **no** "one active data source per knowledge type" invariant. The `status` field exists for disable/archive, not uniqueness.
 
-- `DataSourceModel.status` remains useful
-- there should **not** be a "one active data source per knowledge type" invariant
-- helper functions should query active sources, not enforce uniqueness
+> **Note for `data_model.md`**: the "One Active per Knowledge Type" section in [data_model.md](./data_model.md#one-active-per-knowledge-type) currently lists `DataSourceModel` alongside `Neo4jInstanceModel` and `GraphSchemaModel`. That entry should be removed — see this decision for rationale.
 
-Recommended helper set:
+Helper set:
 
 - `get_data_source(partition_key, data_source_name)`
 - `get_data_sources_for_knowledge_type(partition_key, knowledge_type_name, statuses=None)`
 - `require_active_data_source(partition_key, knowledge_type_name, data_source_name)`
 
-### 3. The GraphQL layer is not fully symmetrical today
+### 3. Active-singleton invariant remains for schema and Neo4j instance, re-scoped
 
-The project does not consistently use `queries/*.py` for every entity:
+`Neo4jInstanceModel` and `GraphSchemaModel` keep the existing "one active row" pattern, but the scope changes from `partition_key` to `(partition_key, knowledge_type_name)`. Versioning history is still preserved by flipping old rows to `status="inactive"` rather than deleting.
 
-- `document` and `graph_schema` use dedicated query modules
+### 4. GraphQL resolver layout is not normalized in this plan
+
+The current code mixes resolver locations:
+
+- `document` and `graph_schema` have dedicated modules under `queries/`
 - `search` and `rag` use `queries/search.py`
-- `neo4j_instance` and `request` are currently resolved directly inside `handlers/schema.py`
+- `neo4j_instance` and `request` are inlined in `handlers/schema.py`
 
-The migration plan should preserve working patterns first, then normalize later if the team wants that cleanup.
+This plan preserves the existing pattern per entity to keep the diff focused. Normalizing resolver layout is out of scope and can be done later as a cleanup if the team chooses.
 
-### 4. The migration has to account for current model gaps
+### 5. `endpoint_id` and `part_id` redundancy is preserved
 
-The current code still has these realities:
+Every table will continue to carry `endpoint_id`, `part_id`, and `partition_key` even though the first two are derivable from the third. Removing them would touch every model write — out of scope for this restructure.
 
-- `DocumentProcessErrorModel` still uses `document_source`
-- `ExecuteExtract` mutation still accepts `document_source`
-- `fastapi_app.py` background extract endpoint still accepts `document_source`
-- `initialize_tables()` must be extended manually as new models are added
+---
 
-The plan below explicitly calls these out.
+## Compatibility Strategy
 
-## Design Principles
+The restructure must not break existing clients. The strategy across phases:
 
-1. Preserve current behavior for existing clients during the transition.
-2. Introduce `knowledge_type_name="default"` as the compatibility bridge.
-3. Make routing changes first-class: cache keys, driver keys, and schema lookup must all move together.
-4. Keep active-only invariants only where they make domain sense:
-   - yes for `Neo4jInstanceModel`
-   - yes for `GraphSchemaModel`
-   - no for `KnowledgeTypeModel`
-   - no for `DataSourceModel`
-5. Prefer fail-closed validation once migration is complete.
+1. **`knowledge_type_name="default"` is the transitional value.** During Phase 6 backfill, every existing `partition_key` gets a `KnowledgeTypeModel` row named `"default"`, and every existing `Neo4jInstance`, `GraphSchema`, `Document`, `Request`, and `DocumentProcessError` row is stamped with `knowledge_type_name="default"`.
+2. **GraphQL and REST parameters default to `"default"`** when `knowledge_type_name` is omitted — until clients are migrated.
+3. **`document_source` is read but not written** once `data_source_name` is in place. Old rows remain queryable.
+4. **Fail-closed validation is added after migration**. Once telemetry confirms all callers pass `knowledge_type_name`, the `"default"` fallback is removed and missing values raise — mirroring the partition_key fail-closed pattern from [development_plan.md §4](./development_plan.md#4-close-partition_key-fail-open-paths-done-2026-05-13).
 
-## Target Scope
+---
 
-### New entities
+## Phase 0 — Decisions and Guardrails
 
-- `KnowledgeTypeModel`
-- `DataSourceModel`
+**Goal**: lock in the design choices before any code changes.
 
-### Existing entities to extend
-
-- `Neo4jInstanceModel`
-- `GraphSchemaModel`
-- `DocumentModel`
-- `RequestModel`
-- `DocumentProcessErrorModel`
-
-### Runtime components to refactor
-
-- `Config.get_graph_rag_util()`
-- `Neo4jConnectionManager`
-- `SchemaResolver`
-- `Extractor`
-- `SearchHandler`
-- `RAGHandler`
-- GraphQL schema and mutation/query adapters
-- FastAPI background extract endpoint
-
-## Phase 0: Decision Record and Guardrails
-
-### Goals
-
-- Confirm the final scoping rules from `data_model.md`
-- Decide index strategy before model files are changed
-- Freeze unrelated model-layer refactors while this branch is active
-
-### Decisions to record
+### Decisions to record explicitly
 
 1. `KnowledgeTypeModel`: many active rows per partition allowed
 2. `DataSourceModel`: many active rows per knowledge type allowed
 3. `Neo4jInstanceModel`: one active row per `(partition_key, knowledge_type_name)`
 4. `GraphSchemaModel`: one active row per `(partition_key, knowledge_type_name)`
 5. `document_source` is transitional only and will be replaced by `data_source_name`
+6. Indexing choice per table: LSI on `knowledge_type_name` for small/medium tables; **GSI for `kge-documents`** (per-tenant size can exceed the 10 GB LSI limit) — see [data_model.md Indexing Strategy](./data_model.md#indexing-strategy-lsi-vs-gsi)
 
-### Acceptance criteria
+### Patch `data_model.md`
 
-- All five decisions above are explicitly approved in this file
-- The team chooses between:
-  - secondary indexes on `knowledge_type_name`, or
-  - composite range keys where appropriate
+Remove `DataSourceModel` from the "One Active per Knowledge Type" list (decision #2 above contradicts the current text).
 
-## Phase 1: Introduce New Core Models
+### Acceptance
 
-### 1.1 Add `KnowledgeTypeModel`
+- All six decisions are approved in this file
+- `data_model.md` is updated to match decision #2
+- No code changes yet
 
-Create:
+---
+
+## Phase 1 — Introduce `KnowledgeTypeModel` and `DataSourceModel`
+
+### 1.1 `KnowledgeTypeModel`
+
+New files:
 
 - `knowledge_graph_engine/models/knowledge_type.py`
 - `knowledge_graph_engine/types/knowledge_type.py`
 - `knowledge_graph_engine/mutations/knowledge_type.py`
+- *(optional)* `knowledge_graph_engine/queries/knowledge_type.py` — only if the team wants the symmetric layout immediately
 
-Optional, depending on whether the team wants symmetry immediately:
+Required fields: `partition_key` (PK hash), `knowledge_type_name` (PK range), `endpoint_id`, `part_id`, `description`, `status`, `updated_by`, `created_at`, `updated_at`.
 
-- `knowledge_graph_engine/queries/knowledge_type.py`
+Required behavior: CRUD aligned with existing decorator patterns (`@insert_update_decorator`, `@delete_decorator`, `@resolve_list_decorator`); list resolver filtered by `partition_key` and optional `statuses`; `require_active_knowledge_type()` validation helper.
 
-Required fields:
+### 1.2 `DataSourceModel`
 
-- `partition_key`
-- `knowledge_type_name`
-- `endpoint_id`
-- `part_id`
-- `description`
-- `status`
-- `updated_by`
-- `created_at`
-- `updated_at`
-
-Required behavior:
-
-- CRUD support aligned with existing decorator patterns
-- list resolver filtered by `partition_key` and optional `status`
-- helper to validate that a named knowledge type exists and is active
-
-### 1.2 Add `DataSourceModel`
-
-Create:
+New files:
 
 - `knowledge_graph_engine/models/data_source.py`
 - `knowledge_graph_engine/types/data_source.py`
 - `knowledge_graph_engine/mutations/data_source.py`
+- *(optional)* `knowledge_graph_engine/queries/data_source.py`
 
-Optional:
+Required fields: `partition_key` (PK hash), `data_source_name` (PK range), `knowledge_type_name` (FK), `endpoint_id`, `part_id`, `source_type`, `config` (Map), `status`, `updated_by`, `created_at`, `updated_at`.
 
-- `knowledge_graph_engine/queries/data_source.py`
+Required behavior: CRUD; query by `knowledge_type_name`; `require_active_data_source(partition_key, knowledge_type_name, data_source_name)`.
 
-Required fields:
+### 1.3 Register new models
 
-- `partition_key`
-- `data_source_name`
-- `knowledge_type_name`
-- `endpoint_id`
-- `part_id`
-- `source_type`
-- `config`
-- `status`
-- `updated_by`
-- `created_at`
-- `updated_at`
+- Add to `initialize_tables()` in [models/utils.py](../knowledge_graph_engine/models/utils.py) — currently registers 5 models manually; will become 7.
+- Add lazy imports in [models/__init__.py](../knowledge_graph_engine/models/__init__.py).
+- Add types and mutations to `type_class()` and `Mutations` in [handlers/schema.py](../knowledge_graph_engine/handlers/schema.py).
+- Add cache config in [handlers/config.py](../knowledge_graph_engine/handlers/config.py) — see Phase 3 for the full updated `CACHE_ENTITY_CONFIG` and `CACHE_RELATIONSHIPS`.
 
-Required behavior:
+### Acceptance
 
-- CRUD support
-- query by `knowledge_type_name`
-- validation helper to ensure a data source belongs to the expected knowledge type
+- New tables created via `initialize_tables()`
+- New GraphQL types and mutations visible
+- Unit tests cover CRUD and validation helpers
 
-### 1.3 Register the new models in the runtime
+---
 
-Update:
-
-- `knowledge_graph_engine/handlers/schema.py`
-- `knowledge_graph_engine/models/utils.py`
-- `knowledge_graph_engine/models/__init__.py`
-- `knowledge_graph_engine/handlers/config.py`
-
-### Acceptance criteria
-
-- New tables can be created via `initialize_tables()`
-- New GraphQL types/mutations are visible
-- Unit tests cover basic CRUD and validation
-
-## Phase 2: Extend Existing Models with Knowledge Type Scope
+## Phase 2 — Extend Existing Models with Knowledge-Type Scope
 
 ### 2.1 Add `knowledge_type_name` to existing tables
 
-Update these model files:
+Add as a non-key attribute on:
 
-- `knowledge_graph_engine/models/neo4j_instance.py`
-- `knowledge_graph_engine/models/graph_schema.py`
-- `knowledge_graph_engine/models/document.py`
-- `knowledge_graph_engine/models/request.py`
-- `knowledge_graph_engine/models/document_process_error.py`
+- [models/neo4j_instance.py](../knowledge_graph_engine/models/neo4j_instance.py)
+- [models/graph_schema.py](../knowledge_graph_engine/models/graph_schema.py)
+- [models/document.py](../knowledge_graph_engine/models/document.py)
+- [models/request.py](../knowledge_graph_engine/models/request.py)
+- [models/document_process_error.py](../knowledge_graph_engine/models/document_process_error.py)
+
+Decide per table whether to add an LSI/GSI on `knowledge_type_name` based on actual query patterns (see [data_model.md Indexing Strategy](./data_model.md#indexing-strategy-lsi-vs-gsi)). At minimum, `kge-documents` should use a **GSI** because per-tenant size can exceed the 10 GB LSI limit.
 
 ### 2.2 Replace `document_source` with `data_source_name`
 
-Update these model and workflow files:
+Verified current usages (need updating):
 
-- `knowledge_graph_engine/models/document.py`
-- `knowledge_graph_engine/models/document_process_error.py`
-- `knowledge_graph_engine/mutations/extract.py`
-- `knowledge_graph_engine/handlers/extractor.py`
-- `knowledge_graph_engine/handlers/fastapi_app.py`
-- `knowledge_graph_engine/types/document.py`
-- `knowledge_graph_engine/types/document_process_error.py`
+- [models/document_process_error.py:27](../knowledge_graph_engine/models/document_process_error.py#L27) — model attribute
+- [mutations/extract.py:18](../knowledge_graph_engine/mutations/extract.py#L18) — GraphQL mutation argument
+- [handlers/fastapi_app.py:256](../knowledge_graph_engine/handlers/fastapi_app.py#L256) — background extract endpoint
+- [handlers/extractor.py:41,85,130,210,221](../knowledge_graph_engine/handlers/extractor.py#L41) — workflow plumbing
+- `types/document.py`, `types/document_process_error.py` — GraphQL type fields
 
 Transition rule:
 
-- keep reading old `document_source` data during migration
-- stop writing new `document_source` values once `data_source_name` is available
+- Continue reading old rows that only have `document_source`
+- Stop writing new `document_source` values once `data_source_name` is available
+- Optional short-term mirror of `data_source_name` → `document_source` if external dashboards depend on the old field
 
 ### 2.3 Re-scope active helpers
 
-These helpers must change from partition scope to knowledge-type scope:
+Signature changes:
 
-- `get_active_neo4j_instance(partition_key)` -> `get_active_neo4j_instance(partition_key, knowledge_type_name)`
-- `_deactivate_current_active_instance(...)`
-- `get_active_graph_schema(partition_key)` -> `get_active_graph_schema(partition_key, knowledge_type_name)`
-- `_deactivate_current_active_schema(...)`
+- `get_active_neo4j_instance(partition_key)` → `get_active_neo4j_instance(partition_key, knowledge_type_name)`
+- `_deactivate_current_active_instance(partition_key, exclude_instance_id=None)` → adds `knowledge_type_name`
+- `get_active_graph_schema(partition_key)` → `get_active_graph_schema(partition_key, knowledge_type_name)`
+- `_deactivate_current_active_schema(partition_key, exclude_schema_name=None)` → adds `knowledge_type_name`
 
-### Acceptance criteria
+Cache the `@method_cache` keys include the new dimension.
 
-- Existing models compile and persist with `knowledge_type_name`
-- Active-instance and active-schema logic is knowledge-type scoped
-- Document and process error writes support `data_source_name`
+### Acceptance
 
-## Phase 3: Routing and Cache Refactor
+- Existing models persist with `knowledge_type_name`
+- Active-instance and active-schema queries are knowledge-type scoped
+- Document and process-error writes accept `data_source_name`
 
-This is the highest-risk phase because it changes runtime identity.
+---
 
-### 3.1 Update driver cache keys
+## Phase 3 — Routing and Cache Refactor
 
-Refactor `knowledge_graph_engine/handlers/neo4j_connection_manager.py`:
+**Highest-risk phase** — changes runtime identity. Driver and `GraphRAGUtil` caches change key shape; misalignment between cache key and lookup logic will cause cross-knowledge-type bleed.
 
-- `_drivers` key changes from `partition_key` to `(partition_key, knowledge_type_name)`
-- `get_driver()`, `close_driver()`, and `close_all()` update accordingly
+### 3.1 Driver cache keys
 
-### 3.2 Update `Config.get_graph_rag_util()`
+In [handlers/neo4j_connection_manager.py](../knowledge_graph_engine/handlers/neo4j_connection_manager.py):
 
-Refactor `knowledge_graph_engine/handlers/config.py`:
+- `Neo4jConnectionManager._drivers` keyed by tuple `(partition_key, knowledge_type_name)` instead of `partition_key`
+- `get_driver(partition_key, knowledge_type_name)` — both params required, fail-closed
+- `close_driver(partition_key, knowledge_type_name)` — same
+- `close_all()` — iterates the new key shape and calls `Config.clear_graph_rag_util(pk, kt)` for each
 
-- `_graph_rag_utils` key changes from `partition_key` to `(partition_key, knowledge_type_name)`
-- `get_graph_rag_util(partition_key, knowledge_type_name)`
+### 3.2 `Config.get_graph_rag_util`
+
+In [handlers/config.py](../knowledge_graph_engine/handlers/config.py):
+
+- `_graph_rag_utils` keyed by tuple `(partition_key, knowledge_type_name)`
+- `get_graph_rag_util(partition_key, knowledge_type_name)` calls `get_active_neo4j_instance(partition_key, knowledge_type_name)` (re-scoped from Phase 2.3)
 - `clear_graph_rag_util(partition_key, knowledge_type_name)`
 
-### 3.3 Update cache metadata
+The instance-lookup-failure-propagates behavior from [development_plan.md §4](./development_plan.md#4-close-partition_key-fail-open-paths-done-2026-05-13) is preserved — no silent fallback to `database="neo4j"`.
 
-`CACHE_ENTITY_CONFIG` and `CACHE_RELATIONSHIPS` need to be expanded for:
+### 3.3 `Extractor.bootstrap_indexes_if_missing`
 
-- `knowledge_type`
-- `data_source`
-- `document_process_error`
+The auto-vector-index bootstrap added in [development_plan.md §3](./development_plan.md#3-operational-hardening-done-2026-05-13) currently runs once per Neo4j instance. After this refactor, each knowledge type's Neo4j instance gets its own bootstrap call — no shared index across knowledge types within a partition.
 
-Also align the resolver paths with the actual implementation style used in the repository. Do not assume every list resolver lives in `queries/`.
+### 3.4 Cache metadata
 
-### Acceptance criteria
+Expand `CACHE_ENTITY_CONFIG` to include `knowledge_type`, `data_source`, `document_process_error`. Match resolver-path style to the actual implementation: list resolvers for `neo4j_instance` and `request` are in `models/`, not `queries/` (this is already correct in the current config — see [config.py:91-104](../knowledge_graph_engine/handlers/config.py#L91-L104) — preserve that asymmetry for the new entities too).
 
-- Separate knowledge types in the same partition get separate drivers
-- Separate knowledge types in the same partition get separate `GraphRAGUtil` instances
-- Cache invalidation config reflects the real module layout
+Expand `CACHE_RELATIONSHIPS` to reflect the new hierarchy:
 
-## Phase 4: Schema Resolution and Workflow Refactor
+```python
+CACHE_RELATIONSHIPS = {
+    "knowledge_type": [
+        "neo4j_instance", "graph_schema", "data_source",
+        "document", "request", "document_process_error",
+    ],
+    "data_source": ["document", "document_process_error"],
+    "document":    ["request"],
+    "graph_schema": ["document"],   # preserved from current
+    "neo4j_instance": [],           # preserved from current
+}
+```
+
+### Acceptance
+
+- Two knowledge types in the same partition return different drivers and different `GraphRAGUtil` instances
+- Each knowledge type's Neo4j instance has its own bootstrapped `vector` index
+- Cache invalidation config aligns with the real module layout
+- All 4 list resolvers still fail-closed on missing `partition_key`; they now also fail-closed on missing `knowledge_type_name` when the kwarg is required
+
+---
+
+## Phase 4 — Schema Resolution and Workflow Refactor
 
 ### 4.1 `SchemaResolver`
 
-Refactor `knowledge_graph_engine/handlers/schema_resolver.py`:
+In [handlers/schema_resolver.py](../knowledge_graph_engine/handlers/schema_resolver.py):
 
-- constructor accepts `knowledge_type_name`
-- active schema lookup is scoped to knowledge type
-- schema save writes `knowledge_type_name`
+- Constructor accepts `knowledge_type_name`
+- `_load_active_schema()` and `evolve_schema_from_graph(text)` scope to `(partition_key, knowledge_type_name)`
+- `_save_as_active()` writes `knowledge_type_name` on the new row and deactivates only the prior active row for the same `(partition_key, knowledge_type_name)`
 
 ### 4.2 `Extractor`
 
-Refactor `knowledge_graph_engine/handlers/extractor.py`:
+In [handlers/extractor.py](../knowledge_graph_engine/handlers/extractor.py):
 
-- accept `knowledge_type_name`
-- accept `data_source_name`
-- validate knowledge type existence
-- validate data source existence or create a backward-compatible default/manual source during transition
-- persist documents and process errors with `knowledge_type_name`
-- route through `Config.get_graph_rag_util(partition_key, knowledge_type_name)`
+- `extract()` accepts `knowledge_type_name` (defaults to `"default"` during transition) and `data_source_name`
+- Validates knowledge type exists and is active before calling `Config.get_graph_rag_util(partition_key, knowledge_type_name)`
+- Validates data source exists and is active before persisting; during transition, missing `data_source_name` auto-creates or maps to a `default` source row
+- Persists `DocumentModel` and `DocumentProcessErrorModel` with `knowledge_type_name`
+- Post-extract calls `bootstrap_indexes_if_missing()` on the per-knowledge-type instance
+- Post-extract calls `evolve_schema_from_graph(text)` on the per-knowledge-type `SchemaResolver`
 
 ### 4.3 `SearchHandler` and `RAGHandler`
 
-Refactor:
+In [handlers/search_handler.py](../knowledge_graph_engine/handlers/search_handler.py) and [handlers/rag_handler.py](../knowledge_graph_engine/handlers/rag_handler.py):
 
-- `knowledge_graph_engine/handlers/search_handler.py`
-- `knowledge_graph_engine/handlers/rag_handler.py`
+- Accept `knowledge_type_name`
+- Load active schema per `(partition_key, knowledge_type_name)`
+- Route through `Config.get_graph_rag_util(partition_key, knowledge_type_name)`
+- Persist `RequestModel` with `knowledge_type_name`
 
-Changes:
-
-- accept `knowledge_type_name`
-- load active schema per knowledge type
-- persist `RequestModel` with `knowledge_type_name`
-
-### Acceptance criteria
+### Acceptance
 
 - Extract, search, and RAG all operate within a knowledge-type boundary
 - Request logging is knowledge-type scoped
 - Schema save/load logic is knowledge-type scoped
+- Vector index bootstrap is per-knowledge-type
 
-## Phase 5: GraphQL and REST Contract Expansion
+---
+
+## Phase 5 — GraphQL and REST Contract Expansion
 
 ### 5.1 GraphQL
 
-Update `knowledge_graph_engine/handlers/schema.py` and mutation/query adapters to:
+Update [handlers/schema.py](../knowledge_graph_engine/handlers/schema.py) and the affected mutation/query adapters:
 
-- add `knowledge_type_name` to extract, search, and rag operations
-- replace `document_source` with `data_source_name`
-- expose CRUD for `KnowledgeTypeModel` and `DataSourceModel`
+- `executeExtract` mutation: add `knowledge_type_name`, replace `document_source` with `data_source_name`
+- `search` query: add `knowledge_type_name`
+- `rag` query: add `knowledge_type_name`
+- Expose CRUD for `KnowledgeTypeModel` and `DataSourceModel` (mutations + queries)
+- Update `Query.request_list` and `Query.neo4j_instance_list` to accept `knowledge_type_name` filter
 
-Transition behavior:
-
-- `knowledge_type_name` defaults to `"default"` until migration is complete
-- after client rollout, make it required
+Transition: `knowledge_type_name` defaults to `"default"` until clients migrate, then becomes required.
 
 ### 5.2 REST daemon
 
-Update `knowledge_graph_engine/handlers/fastapi_app.py`:
+Update [handlers/fastapi_app.py](../knowledge_graph_engine/handlers/fastapi_app.py):
 
-- `POST /{endpoint_id}/extract` accepts `knowledge_type_name`
-- request body uses `data_source_name`
-- background task state includes the knowledge type for traceability
+- `POST /{endpoint_id}/extract`: request body accepts `knowledge_type_name` and `data_source_name` (replacing `document_source`)
+- Optional `Knowledge-Type` header as a daemon-level alternative to body field
+- Background task state includes `knowledge_type_name` for traceability and per-task logging
 
-### Acceptance criteria
+### Acceptance
 
-- GraphQL schema exposes the new arguments and entities
+- GraphQL schema exposes new arguments and entities
 - REST extract endpoint can target a specific knowledge type
-- Existing clients still work with the `"default"` fallback
+- Existing clients still work via `"default"` fallback
 
-## Phase 6: Data Migration and Backfill
+---
+
+## Phase 6 — Data Migration and Backfill
 
 ### 6.1 New table creation
 
-Create:
-
-- `kge-knowledge_types`
-- `kge-data_sources`
+Create `kge-knowledge_types` and `kge-data_sources` via `initialize_tables()` or explicit `model.create_table(...)` call.
 
 ### 6.2 Default knowledge type backfill
 
 For every existing `partition_key`:
 
-1. create `KnowledgeTypeModel(partition_key, "default")`
-2. set `knowledge_type_name="default"` on:
+1. Create `KnowledgeTypeModel(partition_key, "default")` with `status="active"`.
+2. Set `knowledge_type_name="default"` on every existing row of:
    - `Neo4jInstanceModel`
-   - `GraphSchemaModel`
+   - `GraphSchemaModel` (including all inactive versions)
    - `DocumentModel`
    - `RequestModel`
    - `DocumentProcessErrorModel`
 
 ### 6.3 Data source backfill
 
-1. collect distinct `document_source` values per partition
-2. create `DataSourceModel` rows under `knowledge_type_name="default"`
-3. copy `document_source` -> `data_source_name` on documents and process errors
+1. Collect distinct `document_source` values per partition by querying `DocumentModel`.
+2. Create one `DataSourceModel` row per unique source, under `knowledge_type_name="default"`, with `source_type = document_source` and a minimal `config = {}`.
+3. Copy `document_source` → `data_source_name` on every `DocumentModel` and `DocumentProcessErrorModel` row.
+4. Leave `document_source` populated for now (read-only); drop the field in a follow-up release once telemetry confirms no readers remain.
 
-### 6.4 Transitional read/write behavior
+### 6.4 Idempotency
 
-Until all clients are updated:
+The migration script must be re-runnable:
 
-- read old rows that only contain `document_source`
-- write `data_source_name`
-- optionally mirror to `document_source` for a short transition window if operationally necessary
+- `KnowledgeTypeModel("default")` insert uses upsert semantics (skip if exists)
+- `DataSourceModel` create-or-skip based on `(partition_key, data_source_name)`
+- Per-row updates check whether `knowledge_type_name` or `data_source_name` is already set before writing
 
-### Acceptance criteria
+### Acceptance
 
-- migration is idempotent
-- counts reconcile before and after backfill
-- old partitions remain queryable through the `"default"` knowledge type
+- Migration is idempotent (running twice produces the same result)
+- Row counts reconcile before and after
+- Old partitions remain queryable through the `"default"` knowledge type
 
-## Phase 7: Validation and Test Expansion
+---
 
-### New unit tests
+## Phase 7 — Validation and Tightening
 
-- `tests/test_knowledge_type.py`
-- `tests/test_data_source.py`
-- `tests/test_cache.py` or equivalent cache-focused coverage
-- `tests/test_v2_migration.py`
+### 7.1 New unit tests
 
-### Existing tests to expand
+- `tests/test_knowledge_type.py` — CRUD + validation helpers
+- `tests/test_data_source.py` — CRUD + per-knowledge-type listing
+- `tests/test_v2_migration.py` — backfill idempotency
 
-- `tests/test_extract.py`
-- `tests/test_search.py`
-- `tests/test_search_rag.py`
-- `tests/test_integration.py`
-- `tests/test_module_hardening.py`
-- `tests/test_daemon.py`
+### 7.2 Extend existing tests
 
-### Critical validation scenarios
+- `tests/test_extract.py` — extract with explicit `knowledge_type_name`
+- `tests/test_search.py`, `tests/test_search_rag.py` — same
+- `tests/test_integration.py` — daemon flow end-to-end with knowledge type
+- `tests/test_module_hardening.py` — fail-closed on missing `knowledge_type_name` (mirror the existing partition_key fail-closed tests)
+- `tests/test_daemon.py` — REST endpoint with the new fields
 
-1. Same partition, two knowledge types, different active schemas
-2. Same partition, two knowledge types, different Neo4j instances
-3. Extraction into one knowledge type does not leak into another
-4. Search and RAG only read from the targeted knowledge type
-5. Cache invalidation does not cross knowledge-type boundaries accidentally
-6. Migration can be re-run safely
+### 7.3 Critical scenarios to cover
 
-## Recommended Sequence
+1. Same partition, two knowledge types, different active schemas — schema A is not visible to knowledge type B
+2. Same partition, two knowledge types, different Neo4j instances — graph A is not visible from knowledge type B
+3. Extraction into knowledge type A does not write into B's Neo4j
+4. Vector index bootstrap creates separate indexes for A and B
+5. Search and RAG only read from the targeted knowledge type
+6. Cache invalidation cascades within a knowledge type but not across
+7. Migration can be re-run safely on a partially-migrated table
 
-Implement in this order:
+### 7.4 Fail-closed transition
 
-1. Add new model files and table registration
-2. Add `knowledge_type_name` to old models
-3. Refactor routing and cache keys
-4. Refactor schema resolution and handlers
-5. Expand GraphQL and REST contracts
-6. Add migration script
-7. Tighten validation and remove transitional fallbacks
+After client telemetry shows zero requests without `knowledge_type_name`:
 
-This order minimizes the window where the persistence model and runtime routing disagree.
+- Drop the `"default"` fallback in GraphQL/REST adapters
+- Make `knowledge_type_name` required on all extract/search/rag operations
+- List resolvers raise `ValueError("knowledge_type_name is required in context")` when the kwarg is expected, mirroring the partition_key pattern
+
+### Acceptance
+
+- All seven scenarios above pass
+- Fail-closed behavior matches the partition_key model
+- `"default"` fallback can be removed without breaking production clients
+
+---
 
 ## Risks
 
 | Risk | Impact | Mitigation |
-|------|--------|------------|
-| Routing cache still keyed only by partition | High | Refactor `Neo4jConnectionManager` and `Config` in the same phase |
-| Contradictory active-status rules for knowledge types or data sources | High | Keep active-singleton logic only for schema and Neo4j instance |
-| Backfill misses `DocumentProcessErrorModel` | Medium | Treat it as a first-class migration target, not a follow-up |
-| GraphQL contract drifts from handler signatures | Medium | Update `handlers/schema.py`, mutation classes, and integration tests together |
-| Cache invalidation points to the wrong resolver paths | Medium | Align config with the actual repository structure before writing new tests |
+|---|---|---|
+| Driver/`GraphRAGUtil` cache key changes ship before lookup logic does | High | Phase 3 changes both in the same commit; integration test must exercise two-knowledge-type isolation in one partition |
+| Mistakenly applying active-singleton invariant to `KnowledgeTypeModel` or `DataSourceModel` | High | Decision recorded in Phase 0; helper API explicitly omits `get_active_*` for these two entities |
+| Backfill misses `DocumentProcessErrorModel` (only model that still uses raw `document_source`) | Medium | Migration script enumerates all 5 affected models; integration test asserts every row has `knowledge_type_name` |
+| GraphQL contract drifts from handler signatures | Medium | Update `handlers/schema.py`, mutation classes, and handlers in the same commit; smoke test queries each new field |
+| Cache invalidation paths get out-of-date entity-type strings | Medium | Update `CACHE_RELATIONSHIPS` and `CACHE_ENTITY_CONFIG` in the same diff that adds the new models |
+| `data_model.md` and `restructure_plan.md` disagree on `DataSourceModel` active-singleton | Medium | Phase 0 explicitly patches `data_model.md` |
+| `default` fallback never gets removed | Low | Phase 7.4 lists the drop as an acceptance gate |
+
+---
 
 ## Done Definition
 
 The restructure is complete when all of the following are true:
 
 - `KnowledgeTypeModel` and `DataSourceModel` are live
-- all runtime operations accept `knowledge_type_name`
-- active Neo4j instance and active graph schema are scoped to knowledge type
-- documents, requests, and process errors persist `knowledge_type_name`
-- document ingestion uses `data_source_name`
-- tests prove isolation between two knowledge types in the same partition
-- the `"default"` fallback can be removed without breaking production clients
-
-## File Checklist
-
-### New files
-
-- `knowledge_graph_engine/models/knowledge_type.py`
-- `knowledge_graph_engine/models/data_source.py`
-- `knowledge_graph_engine/types/knowledge_type.py`
-- `knowledge_graph_engine/types/data_source.py`
-- `knowledge_graph_engine/mutations/knowledge_type.py`
-- `knowledge_graph_engine/mutations/data_source.py`
-- optional: `knowledge_graph_engine/queries/knowledge_type.py`
-- optional: `knowledge_graph_engine/queries/data_source.py`
-- migration script under a new `scripts/` or `tools/` location
-
-### Modified files
-
-- `knowledge_graph_engine/handlers/config.py`
-- `knowledge_graph_engine/handlers/neo4j_connection_manager.py`
-- `knowledge_graph_engine/handlers/schema_resolver.py`
-- `knowledge_graph_engine/handlers/extractor.py`
-- `knowledge_graph_engine/handlers/search_handler.py`
-- `knowledge_graph_engine/handlers/rag_handler.py`
-- `knowledge_graph_engine/handlers/schema.py`
-- `knowledge_graph_engine/handlers/fastapi_app.py`
-- `knowledge_graph_engine/models/document.py`
-- `knowledge_graph_engine/models/graph_schema.py`
-- `knowledge_graph_engine/models/neo4j_instance.py`
-- `knowledge_graph_engine/models/request.py`
-- `knowledge_graph_engine/models/document_process_error.py`
-- `knowledge_graph_engine/models/utils.py`
-- `knowledge_graph_engine/models/cache.py`
-- `knowledge_graph_engine/mutations/extract.py`
-- `knowledge_graph_engine/queries/search.py`
-- GraphQL type files affected by new fields
-
+- All runtime operations accept `knowledge_type_name`
+- Active Neo4j instance and active graph schema are scoped to `(partition_key, knowledge_type_name)`
+- Driver cache, `GraphRAGUtil` cache, and vector index bootstrap are per-knowledge-type
+- Documents, requests, and process errors persist `knowledge_type_name`
+- Document ingestion uses `data_source_name`; `document_source` is no longer written
+- Integration tests prove isolation between two knowledge types in the same partition
+- The `"default"` fallback has been removed from extract/search/rag without breaking production clients

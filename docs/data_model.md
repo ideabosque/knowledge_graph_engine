@@ -26,17 +26,18 @@ Cardinality below describes **storage**, i.e. how many rows can exist in DynamoD
 | `TenantPartition` | `DataSourceModel` | 1 : N | Sum across knowledge types |
 | `KnowledgeTypeModel` | `Neo4jInstanceModel` | 1 : N | Versioned — many rows, at most one with `status="active"` |
 | `KnowledgeTypeModel` | `GraphSchemaModel` | 1 : N | Versioned — many rows, at most one with `status="active"` |
-| `KnowledgeTypeModel` | `DataSourceModel` | 1 : N | A knowledge type ingests from many sources |
+| `KnowledgeTypeModel` | `DataSourceModel` | 1 : N | A knowledge type ingests from many sources — multiple may be active concurrently |
 | `KnowledgeTypeModel` | `DocumentModel` | 1 : N | All extracted documents live under a knowledge type |
 | `KnowledgeTypeModel` | `RequestModel` | 1 : N | All search and RAG requests are logged per knowledge type |
 | `DataSourceModel` | `DocumentModel` | 1 : N | Each document originates from exactly one data source |
 | `DataSourceModel` | `DocumentProcessErrorModel` | 1 : N | Errors during ingest are attributed to their source (nullable) |
 
-The "1 active at any time" invariant applies to:
+The "1 active at any time" invariant applies only to:
 
 - `Neo4jInstanceModel` — at most one row per `(partition_key, knowledge_type_name)` has `status="active"`
 - `GraphSchemaModel` — same scope
-- `DataSourceModel` — same scope (you can deactivate a source without deleting it)
+
+`KnowledgeTypeModel` and `DataSourceModel` use `status` for soft-disable/archive only — multiple rows can be `active` simultaneously within their respective parent scope (a partition for knowledge types, a knowledge type for data sources).
 
 ---
 
@@ -184,13 +185,15 @@ Every DynamoDB table uses a composite key of `partition_key` (hash) + a per-tabl
 
 ### "One Active per Knowledge Type"
 
-`Neo4jInstanceModel`, `GraphSchemaModel`, and `DataSourceModel` retain the existing **one-active-per-scope** invariant, but the scope is now `(partition_key, knowledge_type_name)` instead of `partition_key` alone. Implementation:
+`Neo4jInstanceModel` and `GraphSchemaModel` retain the existing **one-active-per-scope** invariant, but the scope is now `(partition_key, knowledge_type_name)` instead of `partition_key` alone. Implementation:
 
 - Insert/activate triggers `_deactivate_current_active_*(partition_key, knowledge_type_name, exclude_*=current)` on the matching scope.
 - Old versions are flipped to `status = "inactive"` rather than deleted, preserving full version history.
 - Lookups use `get_active_*(partition_key, knowledge_type_name)`.
 
 At the storage level this is **1:N** (one knowledge type, many rows); the "1 active" invariant is enforced by application code and surfaced in the diagram labels.
+
+`KnowledgeTypeModel` and `DataSourceModel` do **not** enforce active-singleton. Multiple knowledge types may be active in the same partition concurrently (the whole point — `products`, `support_tickets`, `internal_wiki` running side by side), and a knowledge type may ingest from several active data sources simultaneously (`woocommerce_main`, `manual_csv`, etc.). The `status` field exists for soft-disable and archive, not uniqueness.
 
 ### Foreign-Key Semantics
 
