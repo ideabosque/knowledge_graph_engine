@@ -17,18 +17,18 @@ from graphene import (
 )
 from silvaengine_utility import JSONCamelCase
 
-from ..mutations.document import DeleteDocument, InsertUpdateDocument
-from ..mutations.extract import ExecuteExtract
-from ..mutations.graph_schema import DeleteGraphSchema, InsertUpdateGraphSchema
-from ..mutations.neo4j_instance import DeleteNeo4jInstance, InsertUpdateNeo4jInstance
-from ..queries.document import resolve_document, resolve_document_list
-from ..queries.graph_schema import resolve_graph_schema, resolve_graph_schema_list
-from ..queries.search import resolve_rag, resolve_search
-from ..types.document import DocumentListType, DocumentType
-from ..types.graph_schema import GraphSchemaListType, GraphSchemaType
-from ..types.neo4j_instance import Neo4jInstanceListType, Neo4jInstanceType
-from ..types.request import RequestListType, RequestType
-from ..types.search import ExtractResultType, RAGQueryResultType, SearchResultType
+from .mutations.document import DeleteDocument, InsertUpdateDocument
+from .mutations.extract import ExecuteExtract
+from .mutations.graph_schema import DeleteGraphSchema, InsertUpdateGraphSchema
+from .mutations.neo4j_instance import DeleteNeo4jInstance, InsertUpdateNeo4jInstance
+from .queries.document import resolve_document, resolve_document_list
+from .queries.graph_schema import resolve_graph_schema, resolve_graph_schema_list
+from .queries.search import resolve_rag, resolve_search
+from .types.document import DocumentListType, DocumentType
+from .types.graph_schema import GraphSchemaListType, GraphSchemaType
+from .types.neo4j_instance import Neo4jInstanceListType, Neo4jInstanceType
+from .types.request import RequestListType, RequestType
+from .types.search import ExtractResultType, RAGQueryResultType, SearchResultType
 
 
 def type_class() -> list:
@@ -146,7 +146,7 @@ class Query(ObjectType):
         return resolve_graph_schema_list(info, **kwargs)
 
     def resolve_neo4j_instance(self, info: ResolveInfo, **kwargs: Any) -> Neo4jInstanceType | None:
-        from ..models.neo4j_instance import get_neo4j_instance, get_neo4j_instance_type
+        from .models.neo4j_instance import get_neo4j_instance, get_neo4j_instance_type
 
         partition_key = info.context.get("partition_key")
         instance_id = kwargs.get("instance_id")
@@ -159,12 +159,12 @@ class Query(ObjectType):
             return None
 
     def resolve_neo4j_instance_list(self, info: ResolveInfo, **kwargs: Any) -> Neo4jInstanceListType:
-        from ..models.neo4j_instance import resolve_neo4j_instance_list as _resolve_neo4j_instance_list
+        from .models.neo4j_instance import resolve_neo4j_instance_list as _resolve_neo4j_instance_list
 
         return _resolve_neo4j_instance_list(info, **kwargs)
 
     def resolve_request(self, info: ResolveInfo, **kwargs: Any) -> RequestType | None:
-        from ..models.request import get_request, get_request_count, get_request_type
+        from .models.request import get_request, get_request_count, get_request_type
 
         partition_key = info.context.get("partition_key")
         request_uuid = kwargs.get("request_uuid")
@@ -179,7 +179,7 @@ class Query(ObjectType):
             return None
 
     def resolve_request_list(self, info: ResolveInfo, **kwargs: Any) -> RequestListType:
-        from ..models.request import resolve_request_list as _resolve_request_list
+        from .models.request import resolve_request_list as _resolve_request_list
 
         return _resolve_request_list(info, **kwargs)
 

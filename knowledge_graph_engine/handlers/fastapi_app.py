@@ -237,7 +237,7 @@ def _run_extract_background(
         _extract_tasks[task_id]["status"] = "running"
 
         from ..utils.listener import create_listener_info
-        from ..handlers.extractor import Extractor
+        from ..handlers.extraction.handler import Extractor
 
         info = create_listener_info(
             logger,

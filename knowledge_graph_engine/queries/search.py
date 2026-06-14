@@ -7,8 +7,7 @@ from typing import Any
 
 from graphene import ResolveInfo
 
-from ..handlers.search_handler import SearchHandler
-from ..handlers.rag_handler import RAGHandler
+from ..handlers.search.handler import SearchHandler, RAGHandler
 
 
 def resolve_search(info: ResolveInfo, **kwargs: Any) -> Any:

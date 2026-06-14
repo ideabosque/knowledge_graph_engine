@@ -5,7 +5,9 @@ __author__ = "silvaengine"
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+from graphene import ResolveInfo
 
 try:
     import nest_asyncio
@@ -14,6 +16,18 @@ except ImportError:  # pragma: no cover
 
 if nest_asyncio is not None:  # pragma: no branch
     nest_asyncio.apply()
+
+from ..telemetry import measure_handler_duration
+
+# Schema imports done lazily inside methods to avoid circular imports at module level
+# from neo4j_graphrag.experimental.components.schema import (...)
+
+
+class SchemaResolverError(Exception):
+    """Base error for schema resolution handler."""
+
+    code = "system_error"
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +52,6 @@ def _run_async(coro):
         asyncio.set_event_loop(loop)
     loop.set_exception_handler(_suppress_event_loop_closed)
     return loop.run_until_complete(coro)
-
-from neo4j_graphrag.experimental.components.schema import (
-    GraphSchema,
-    NodeType,
-    RelationshipType,
-    PropertyType,
-    ConstraintType,
-    SchemaBuilder,
-    SchemaFromTextExtractor,
-    SchemaFromExistingGraphExtractor,
-)
 
 
 class SchemaResolver:
@@ -75,8 +78,8 @@ class SchemaResolver:
     def resolve(
         self,
         text: str,
-        graph_schema: Union[GraphSchema, dict, str, None] = None,
-    ) -> Union[GraphSchema, str]:
+        graph_schema: Union["GraphSchema", dict, str, None] = None,
+    ) -> Union["GraphSchema", str]:
         """
         Returns a value suitable for SimpleKGPipeline's `schema` parameter.
 
@@ -87,6 +90,8 @@ class SchemaResolver:
           the text needs. If new types found, merge them ON TOP of the active
           schema (new version is always a superset). If no new types, reuse active.
         """
+        from neo4j_graphrag.experimental.components.schema import GraphSchema
+
         if isinstance(graph_schema, dict):
             if graph_schema.get("auto_extend"):
                 base = self._dict_to_graph_schema(graph_schema)
@@ -118,7 +123,7 @@ class SchemaResolver:
         )
         return "EXTRACTED"
 
-    def _check_and_evolve(self, text: str, active: GraphSchema) -> GraphSchema:
+    def _check_and_evolve(self, text: str, active: "GraphSchema") -> "GraphSchema":
         """
         Two-phase schema coverage check.
 
@@ -250,9 +255,10 @@ class SchemaResolver:
             len(new_patterns),
         )
 
-    def _load_active_schema(self) -> Optional[GraphSchema]:
+    def _load_active_schema(self) -> Optional["GraphSchema"]:
         """Load the active GraphSchema for this partition."""
-        from ..models.graph_schema import get_active_graph_schema
+        from neo4j_graphrag.experimental.components.schema import GraphSchema
+        from ...models.graph_schema import get_active_graph_schema
 
         try:
             record = get_active_graph_schema(self.partition_key)
@@ -268,20 +274,24 @@ class SchemaResolver:
                 )
         return None
 
-    def _extract_from_existing_graph(self) -> GraphSchema:
+    def _extract_from_existing_graph(self) -> "GraphSchema":
         """Use SchemaFromExistingGraphExtractor to read schema from tenant's Neo4j."""
+        from neo4j_graphrag.experimental.components.schema import SchemaFromExistingGraphExtractor
+
         extractor = SchemaFromExistingGraphExtractor(
             driver=self.graph_rag_util.driver,
             neo4j_database=self.graph_rag_util.neo4j_database,
         )
         return _run_async(extractor.run())
 
-    def _discover_schema(self, text: str) -> GraphSchema:
+    def _discover_schema(self, text: str) -> "GraphSchema":
         """Use LLM to discover entity types from text."""
+        from neo4j_graphrag.experimental.components.schema import SchemaFromTextExtractor
+
         extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
         return _run_async(extractor.run(text=text))
 
-    def _get_node_labels(self, schema: GraphSchema) -> Set[str]:
+    def _get_node_labels(self, schema: "GraphSchema") -> Set[str]:
         """Extract all node labels from a schema."""
         labels = set()
         if schema.node_types:
@@ -292,7 +302,7 @@ class SchemaResolver:
                     labels.add(nt.label)
         return labels
 
-    def _get_rel_labels(self, schema: GraphSchema) -> Set[str]:
+    def _get_rel_labels(self, schema: "GraphSchema") -> Set[str]:
         """Extract all relationship labels from a schema."""
         labels = set()
         if schema.relationship_types:
@@ -304,7 +314,7 @@ class SchemaResolver:
         return labels
 
     def _find_new_types(
-        self, active: GraphSchema, discovered: GraphSchema
+        self, active: "GraphSchema", discovered: "GraphSchema"
     ) -> Tuple[List, List, List]:
         """
         Compare discovered schema against active schema.
@@ -340,18 +350,27 @@ class SchemaResolver:
 
         return new_nodes, new_rels, new_patterns
 
-    def _auto_generate_and_save(self, text: str) -> GraphSchema:
+    def _auto_generate_and_save(self, text: str) -> "GraphSchema":
         """Use SchemaFromTextExtractor to auto-generate GraphSchema from text, save as active."""
         schema = self._discover_schema(text)
         self._save_as_active(schema, "auto")
         return schema
 
-    def _dict_to_graph_schema(self, schema_dict: dict) -> GraphSchema:
+    def _dict_to_graph_schema(self, schema_dict: dict) -> "GraphSchema":
         """
         Convert user-provided dict (from GraphQL JSON input) to GraphSchema.
         Accepts neo4j-graphrag-python format:
           { "node_types": [...], "relationship_types": [...], "patterns": [...] }
         """
+        from neo4j_graphrag.experimental.components.schema import (
+            ConstraintType,
+            GraphSchema,
+            NodeType,
+            PropertyType,
+            RelationshipType,
+            SchemaBuilder,
+        )
+
         node_types = []
         for nt in schema_dict.get("node_types", []):
             if isinstance(nt, str):
@@ -400,13 +419,15 @@ class SchemaResolver:
             constraints=constraints if constraints else None,
         )
 
-    def _hybrid_schema(self, text: str, base_schema: GraphSchema) -> GraphSchema:
+    def _hybrid_schema(self, text: str, base_schema: "GraphSchema") -> "GraphSchema":
         """Start from base schema, LLM discovers additional types from text."""
         auto_schema = self._discover_schema(text)
         return self._merge_schemas(base_schema, auto_schema)
 
-    def _merge_schemas(self, base: GraphSchema, auto: GraphSchema) -> GraphSchema:
+    def _merge_schemas(self, base: "GraphSchema", auto: "GraphSchema") -> "GraphSchema":
         """Merge base and auto schemas. Base takes priority. Result is always a superset of base."""
+        from neo4j_graphrag.experimental.components.schema import SchemaBuilder
+
         base_labels = self._get_node_labels(base)
         base_rel_labels = self._get_rel_labels(base)
 
@@ -446,10 +467,11 @@ class SchemaResolver:
             return [SchemaResolver._sanitize_for_dynamodb(i) for i in obj]
         return obj
 
-    def _save_as_active(self, schema: GraphSchema, schema_type: str):
+    def _save_as_active(self, schema: "GraphSchema", schema_type: str):
         """Save schema as the new active schema, deactivating any existing active one."""
         import pendulum
-        from ..models.graph_schema import GraphSchemaModel, _deactivate_current_active_schema
+        from neo4j_graphrag.experimental.components.schema import GraphSchema
+        from ...models.graph_schema import GraphSchemaModel, _deactivate_current_active_schema
 
         now = pendulum.now("UTC")
         neo4j_schema_string = self._build_neo4j_schema_string(schema)
@@ -470,7 +492,7 @@ class SchemaResolver:
             updated_at=now,
         ).save()
 
-    def _build_neo4j_schema_string(self, schema: GraphSchema) -> str:
+    def _build_neo4j_schema_string(self, schema: "GraphSchema") -> str:
         """
         Convert GraphSchema to plain-text description string
         used by Text2CypherRetriever for Cypher generation.
@@ -488,3 +510,56 @@ class SchemaResolver:
                 # Patterns are tuples: (source, relationship, target)
                 lines.append(f"(:{p[0]})-[:{p[1]}]->(:{p[2]})")
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Public dispatch functions
+# ---------------------------------------------------------------------------
+
+
+def _resolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
+    """Private implementation — resolve schema for extraction."""
+    from ..config import Config
+
+    partition_key = kwargs.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required")
+
+    graph_rag_util = Config.get_graph_rag_util(partition_key)
+    resolver = SchemaResolver(graph_rag_util, partition_key)
+    result = resolver.resolve(
+        text=kwargs.get("text", ""),
+        graph_schema=kwargs.get("graph_schema"),
+    )
+
+    # Convert GraphSchema to dict for serialization
+    if hasattr(result, "model_dump"):
+        return {"status": "success", "schema": result.model_dump()}
+    return {"status": "success", "schema": result}
+
+
+def dispatch_resolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
+    """Public dispatch — wraps _resolve_schema with telemetry."""
+    with measure_handler_duration(info, operation="resolve_schema", handler="schema_resolution"):
+        return _resolve_schema(info, **kwargs)
+
+
+def _evolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
+    """Private implementation — evolve schema from graph after extraction."""
+    from ..config import Config
+
+    partition_key = kwargs.get("partition_key")
+    if not partition_key:
+        raise ValueError("partition_key is required")
+
+    graph_rag_util = Config.get_graph_rag_util(partition_key)
+    resolver = SchemaResolver(graph_rag_util, partition_key)
+    resolver.evolve_schema_from_graph(text=kwargs.get("text"))
+
+    return {"status": "success", "partition_key": partition_key}
+
+
+def dispatch_evolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
+    """Public dispatch — wraps _evolve_schema with telemetry."""
+    with measure_handler_duration(info, operation="evolve_schema", handler="schema_resolution"):
+        return _evolve_schema(info, **kwargs)

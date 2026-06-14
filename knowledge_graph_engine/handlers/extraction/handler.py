@@ -5,9 +5,33 @@ __author__ = "silvaengine"
 
 import traceback
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypedDict
 
 import pendulum
+from graphene import ResolveInfo
+
+from ..telemetry import measure_handler_duration
+
+
+class ExtractHandlerError(Exception):
+    """Base error for extraction handler."""
+
+    code = "system_error"
+
+
+class ExtractResult(TypedDict, total=False):
+    status: str
+    partition_key: str
+    document_uuid: str
+    schema_name: str
+    entities_extracted: int
+    relationships_extracted: int
+    result: Dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Private implementation
+# ---------------------------------------------------------------------------
 
 
 class Extractor:
@@ -16,7 +40,7 @@ class Extractor:
     Uses SimpleKGPipeline from neo4j-graphrag-python for extraction.
     """
 
-    def __init__(self, info: Dict[str, Any]):
+    def __init__(self, info: Any):
         self.info = info
         context = info.context if hasattr(info, "context") else {}
         self.logger = context.get("logger")
@@ -47,9 +71,9 @@ class Extractor:
         if not text:
             raise ValueError("text is required")
 
-        from ..handlers.config import Config
-        from ..handlers.schema_resolver import SchemaResolver
-        from ..models.document import insert_update_document
+        from ..config import Config
+        from ..schema_resolution.handler import SchemaResolver
+        from ...models.document import insert_update_document
 
         # Get tenant's GraphRAG utility
         graph_rag_util = Config.get_graph_rag_util(partition_key)
@@ -111,7 +135,7 @@ class Extractor:
 
         # Persist document metadata to DynamoDB
         document_uuid = f"doc-{pendulum.now('UTC').int_timestamp}-{uuid.uuid4().hex[:8]}"
-        from .partition_manager import PartitionManager
+        from ..partition_manager import PartitionManager
 
         parsed_endpoint, parsed_part = PartitionManager.parse_partition_key(partition_key)
         endpoint_id = params.get("endpoint_id") or parsed_endpoint
@@ -182,7 +206,7 @@ class Extractor:
         Returns a dict with entities/relationships or None if fallback also fails.
         """
         try:
-            from ..utils.entity_extractor import EntityExtractor
+            from ...utils.entity_extractor import EntityExtractor
 
             extractor = EntityExtractor(llm=graph_rag_util.llm)
             entities, relationships = extractor.extract(text=text, schema=schema)
@@ -213,7 +237,7 @@ class Extractor:
     ) -> None:
         """Persist extraction error to kge-document_process_errors for observability."""
         try:
-            from ..models.document_process_error import insert_update_document_process_error
+            from ...models.document_process_error import insert_update_document_process_error
 
             insert_update_document_process_error(
                 self.info,
@@ -226,3 +250,20 @@ class Extractor:
         except Exception:
             if self.logger:
                 self.logger.warning("Failed to record process error to DynamoDB")
+
+
+# ---------------------------------------------------------------------------
+# Public dispatch
+# ---------------------------------------------------------------------------
+
+
+def _extract(info: ResolveInfo, **kwargs: Any) -> ExtractResult:
+    """Private implementation — pure business logic, no telemetry."""
+    extractor = Extractor(info)
+    return extractor.extract(**kwargs)
+
+
+def dispatch_extract(info: ResolveInfo, **kwargs: Any) -> ExtractResult:
+    """Public dispatch — wraps _extract with telemetry."""
+    with measure_handler_duration(info, operation="extract", handler="extraction"):
+        return _extract(info, **kwargs)

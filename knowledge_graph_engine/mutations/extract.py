@@ -33,7 +33,7 @@ class ExecuteExtract(Mutation):
             raise ValueError("text is required")
 
         from ..handlers.config import Config
-        from ..handlers.extractor import Extractor
+        from ..handlers.extraction.handler import Extractor
 
         logger = Config.get_logger()
         extractor = Extractor(info)

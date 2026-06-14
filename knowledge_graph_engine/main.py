@@ -14,7 +14,7 @@ from silvaengine_utility import Graphql
 
 from .handlers.config import Config
 from .handlers.partition_manager import PartitionManager
-from .handlers.schema import Mutations, Query, type_class
+from .schema import Mutations, Query, type_class
 
 
 def deploy() -> List:
@@ -117,7 +117,7 @@ class KnowledgeGraphEngine(Graphql):
     def async_extract_knowledge_graph(self, **params: Any) -> Any:
         self._apply_partition_defaults(params)
 
-        from .handlers.extractor import Extractor
+        from .handlers.extraction.handler import Extractor
         from .utils.listener import create_listener_info
 
         info = create_listener_info(self.logger, "extract", self.setting, **params)
@@ -161,11 +161,20 @@ class KnowledgeGraphEngine(Graphql):
                 )
 
     def daemon(self):
+        """
+        Start the FastAPI server (gateway mode).
+
+        NOTE: The daemon() method is kept for backward compatibility.
+        In the restructured architecture, the gateway is a separate package
+        (silvaengine_gateway). This method is retained so that Lambda deployments
+        that call KnowledgeGraphEngine(...).daemon() continue to work.
+        New deployments should use silvaengine_gateway directly.
+        """
         try:
             import uvicorn
 
-            from .handlers.auth_router import router as auth_router
             from .handlers.fastapi_app import app
+            from .handlers.auth_router import router as auth_router
             from .handlers.middleware import FlexJWTMiddleware
 
             Config.kge = self
@@ -231,7 +240,9 @@ def main():
             "neo4j_username": os.getenv("neo4j_username", "neo4j"),
             "neo4j_password": os.getenv("neo4j_password"),
             "neo4j_database": os.getenv("neo4j_database", "neo4j"),
-            # Auth
+            # Server (kept for backward compatibility with daemon())
+            "port": int(os.getenv("PORT", "8000")),
+            # Auth (kept for backward compatibility with daemon())
             "auth_provider": os.getenv("AUTH_PROVIDER", "local"),
             "jwt_secret_key": os.getenv("JWT_SECRET_KEY", "CHANGEME"),
             "jwt_algorithm": os.getenv("JWT_ALGORITHM", "HS256"),
@@ -240,13 +251,10 @@ def main():
             "admin_password": os.getenv("ADMIN_PASSWORD", ""),
             "admin_static_token": os.getenv("ADMIN_STATIC_TOKEN", ""),
             "local_user_file": os.getenv("LOCAL_USER_FILE"),
-            # Cognito
             "cognito_user_pool_id": os.getenv("COGNITO_USER_POOL_ID", ""),
             "cognito_app_client_id": os.getenv("COGNITO_APP_CLIENT_ID", ""),
             "cognito_app_secret": os.getenv("COGNITO_APP_SECRET", ""),
             "cognito_jwks_url": os.getenv("COGNITO_JWKS_URL"),
-            # Server
-            "port": int(os.getenv("PORT", "8000")),
         },
     )
     engine.daemon()
