@@ -175,6 +175,36 @@ class KnowledgeGraphEngine(Graphql):
         )
 
 
+# ---------------------------------------------------------------------------
+# Standalone dispatch functions
+#
+# These can be called directly by silvaengine_gateway's route manifest
+# without needing a KnowledgeGraphEngine instance. They create a fresh
+# instance from Config on each call (Config.initialize must have been
+# called first, typically by the gateway's startup lifespan).
+# ---------------------------------------------------------------------------
+
+
+def dispatch_graphql(**params: Any) -> Any:
+    """Execute a GraphQL query/mutation against the Knowledge Graph Engine.
+
+    Requires Config.initialize() to have been called (done by gateway startup).
+    """
+    logger = Config.get_logger()
+    instance = KnowledgeGraphEngine(logger, **Config.get_setting())
+    return instance.knowledge_graph_graphql(**params)
+
+
+def dispatch_extract(**params: Any) -> Any:
+    """Execute an extraction against the Knowledge Graph Engine.
+
+    Requires Config.initialize() to have been called (done by gateway startup).
+    """
+    logger = Config.get_logger()
+    instance = KnowledgeGraphEngine(logger, **Config.get_setting())
+    return instance.async_extract_knowledge_graph(**params)
+
+
 def main():
     from dotenv import load_dotenv
 

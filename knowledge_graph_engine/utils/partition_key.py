@@ -39,7 +39,11 @@ def build_partition_key_from_headers(
     Raises:
         ValueError: If Part-Id header is missing.
     """
-    part_id = headers.get("Part-Id") or headers.get("Part-ID")
+    part_id = (
+        headers.get("part-id")
+        or headers.get("Part-Id")
+        or headers.get("Part-ID")
+    )
     if not part_id:
         raise ValueError(
             "Part-Id header is required to construct partition_key"
