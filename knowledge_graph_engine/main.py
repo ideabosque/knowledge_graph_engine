@@ -162,39 +162,17 @@ class KnowledgeGraphEngine(Graphql):
 
     def daemon(self):
         """
-        Start the FastAPI server (gateway mode).
+        Deprecated — gateway functionality has moved to silvaengine_gateway.
 
-        NOTE: The daemon() method is kept for backward compatibility.
-        In the restructured architecture, the gateway is a separate package
-        (silvaengine_gateway). This method is retained so that Lambda deployments
-        that call KnowledgeGraphEngine(...).daemon() continue to work.
-        New deployments should use silvaengine_gateway directly.
+        This method is retained as a stub so that any legacy call to
+        KnowledgeGraphEngine(...).daemon() does not crash, but it will
+        log a warning and exit. New deployments should run the gateway
+        package directly: `python -m silvaengine_gateway`
         """
-        try:
-            import uvicorn
-
-            from .handlers.fastapi_app import app
-            from .handlers.auth_router import router as auth_router
-            from .handlers.middleware import FlexJWTMiddleware
-
-            Config.kge = self
-
-            # JWT guard
-            app.add_middleware(FlexJWTMiddleware, public_paths=["/health"])
-            # mount /auth routes
-            app.include_router(auth_router)
-
-            port = int(self.setting.get("port", 8000))
-            self.logger.info(
-                f"Starting server on port {port} (auth={self.setting.get('auth_provider', 'local')})"
-            )
-
-            uvicorn.run(app, host="0.0.0.0", port=port)
-        except KeyboardInterrupt:
-            self.logger.info("Server interrupted by user.")
-        except Exception as e:
-            self.logger.exception("Fatal server error")
-            sys.exit(1)
+        self.logger.warning(
+            "daemon() is deprecated. The FastAPI gateway has moved to the "
+            "silvaengine_gateway package. Run `python -m silvaengine_gateway` instead."
+        )
 
 
 def main():
@@ -240,21 +218,13 @@ def main():
             "neo4j_username": os.getenv("neo4j_username", "neo4j"),
             "neo4j_password": os.getenv("neo4j_password"),
             "neo4j_database": os.getenv("neo4j_database", "neo4j"),
-            # Server (kept for backward compatibility with daemon())
-            "port": int(os.getenv("PORT", "8000")),
-            # Auth (kept for backward compatibility with daemon())
-            "auth_provider": os.getenv("AUTH_PROVIDER", "local"),
-            "jwt_secret_key": os.getenv("JWT_SECRET_KEY", "CHANGEME"),
-            "jwt_algorithm": os.getenv("JWT_ALGORITHM", "HS256"),
-            "access_token_exp": os.getenv("ACCESS_TOKEN_EXP", "15"),
-            "admin_username": os.getenv("ADMIN_USERNAME", ""),
-            "admin_password": os.getenv("ADMIN_PASSWORD", ""),
-            "admin_static_token": os.getenv("ADMIN_STATIC_TOKEN", ""),
-            "local_user_file": os.getenv("LOCAL_USER_FILE"),
-            "cognito_user_pool_id": os.getenv("COGNITO_USER_POOL_ID", ""),
-            "cognito_app_client_id": os.getenv("COGNITO_APP_CLIENT_ID", ""),
-            "cognito_app_secret": os.getenv("COGNITO_APP_SECRET", ""),
-            "cognito_jwks_url": os.getenv("COGNITO_JWKS_URL"),
         },
+    )
+
+    # daemon() is deprecated — gateway is now silvaengine_gateway package.
+    # Kept here so `python -m knowledge_graph_engine` still runs without crash.
+    logger.warning(
+        "Running KGE as standalone is deprecated. "
+        "Use `python -m silvaengine_gateway` to start the gateway."
     )
     engine.daemon()

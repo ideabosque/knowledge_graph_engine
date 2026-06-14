@@ -177,30 +177,28 @@ def test_list_resolvers_raise_when_partition_key_missing():
 
 @pytest.mark.unit
 def test_fastapi_get_partition_key_requires_part_id():
-    """FastAPI _get_partition_key must raise 400 when Part-Id header is absent.
+    """Partition-key construction must raise ValueError when Part-Id is absent.
 
     A bare endpoint_id would hash to its own partition bucket, hiding data
     written under the proper `endpoint#part_id` key.
     """
-    from fastapi import HTTPException
-    from knowledge_graph_engine.handlers.fastapi_app import _get_partition_key
+    from knowledge_graph_engine.utils.partition_key import build_partition_key_from_headers
 
     request = SimpleNamespace(headers={})  # no Part-Id
 
-    with pytest.raises(HTTPException) as excinfo:
-        _get_partition_key("my-endpoint", request)
+    with pytest.raises(ValueError) as excinfo:
+        build_partition_key_from_headers("my-endpoint", request.headers)
 
-    assert excinfo.value.status_code == 400
-    assert "Part-Id" in excinfo.value.detail
+    assert "Part-Id" in str(excinfo.value)
 
 
 @pytest.mark.unit
 def test_fastapi_get_partition_key_accepts_part_id():
-    """When Part-Id is present, _get_partition_key builds the full key."""
-    from knowledge_graph_engine.handlers.fastapi_app import _get_partition_key
+    """When Part-Id is present, partition-key construction builds the full key."""
+    from knowledge_graph_engine.utils.partition_key import build_partition_key_from_headers
 
     request = SimpleNamespace(headers={"Part-Id": "tenant-a"})
-    pk, part_id = _get_partition_key("my-endpoint", request)
+    pk, part_id = build_partition_key_from_headers("my-endpoint", request.headers)
 
     assert pk == "my-endpoint#tenant-a"
     assert part_id == "tenant-a"

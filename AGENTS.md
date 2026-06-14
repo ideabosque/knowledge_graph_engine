@@ -6,7 +6,7 @@ Guidelines for AI coding agents working on the Knowledge Graph Engine repository
 
 ```bash
 # Install dependencies
-pip install -e ".[fastapi]"
+pip install -e .
 
 # Run all tests
 pytest tests/
@@ -21,8 +21,8 @@ pytest tests/test_extract.py::TestExtractor::test_extract -v
 pytest -m unit
 pytest -m integration
 
-# Run daemon mode locally
-python -m knowledge_graph_engine
+# Start the gateway (KGE is a core library; gateway is a separate package)
+python -m silvaengine_gateway
 
 # Type checking (pyright configured in pyproject.toml)
 pyright knowledge_graph_engine/
