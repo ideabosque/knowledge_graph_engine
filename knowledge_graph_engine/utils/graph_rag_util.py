@@ -165,19 +165,25 @@ class GraphRAGUtil:
         model_params = self.settings.get("llm_model_params", {})
 
         if llm_type == "openai":
-            self.llm = OpenAILLM(
-                model_name=llm_name,
-                model_params={"top_p": 1, "temperature": 1, **model_params},
-                api_key=self.settings.get("openai_api_key"),
-                base_url=self.settings.get("openai_base_url"),
-            )
+            llm_kwargs = {
+                "model_name": llm_name,
+                "model_params": {"top_p": 1, "temperature": 1, **model_params},
+                "api_key": self.settings.get("openai_api_key"),
+            }
+            openai_base_url = self.settings.get("openai_base_url")
+            if openai_base_url:
+                llm_kwargs["base_url"] = openai_base_url
+            self.llm = OpenAILLM(**llm_kwargs)
         elif llm_type == "anthropic":
-            self.llm = AnthropicLLM(
-                model_name=llm_name,
-                model_params={"max_tokens": 4096, **model_params},
-                api_key=self.settings.get("anthropic_api_key"),
-                base_url=self.settings.get("anthropic_base_url"),
-            )
+            anthropic_kwargs = {
+                "model_name": llm_name,
+                "model_params": {"max_tokens": 4096, **model_params},
+                "api_key": self.settings.get("anthropic_api_key"),
+            }
+            anthropic_base_url = self.settings.get("anthropic_base_url")
+            if anthropic_base_url:
+                anthropic_kwargs["base_url"] = anthropic_base_url
+            self.llm = AnthropicLLM(**anthropic_kwargs)
         elif llm_type == "ollama":
             self.llm = OllamaLLM(
                 model_name=llm_name,
@@ -216,11 +222,14 @@ class GraphRAGUtil:
                 host=self.settings.get("ollama_host", "http://localhost:11434"),
             )
         else:
-            self.embedder = OpenAIEmbeddings(
-                model=embedding_model,
-                api_key=self.settings.get("openai_api_key"),
-                base_url=self.settings.get("openai_base_url"),
-            )
+            embedder_kwargs = {
+                "model": embedding_model,
+                "api_key": self.settings.get("openai_api_key"),
+            }
+            base_url = self.settings.get("openai_base_url")
+            if base_url:
+                embedder_kwargs["base_url"] = base_url
+            self.embedder = OpenAIEmbeddings(**embedder_kwargs)
 
     def build_knowledge_graph(
         self,
