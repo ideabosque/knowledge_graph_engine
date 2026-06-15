@@ -1,51 +1,19 @@
 # Knowledge Graph Engine
 
-`knowledge_graph_engine` is a multi-tenant SilvaEngine module for extracting entities and relationships from text, storing them in tenant-isolated Neo4j instances, and exposing retrieval flows through GraphQL.
+`knowledge_graph_engine` is a SilvaEngine module for extracting entities and relationships from text, storing them in tenant-isolated Neo4j instances, and exposing search and RAG flows through GraphQL-compatible engine entrypoints.
 
-## Current State
+## Current Shape
 
-The module provides:
+The current package is focused on **engine/runtime logic**, not HTTP hosting.
 
-- Partition-aware request handling through `partition_key = "{endpoint_id}#{part_id}"`.
-- A GraphQL engine entrypoint, deploy metadata, and a **FastAPI daemon mode** (`engine.daemon()`).
-- Dedicated Neo4j driver routing per tenant via `Neo4jConnectionManager` using the **active Neo4j instance**.
-- **Active-only schema pattern**: one active schema per partition, automatically used by extract, search, and RAG.
-- **Active-only instance pattern**: one active Neo4j instance per partition, auto-deactivation on insert/activate.
-- Schema resolution: active schema, user-provided dict (saved as new active), auto-generated, or hybrid extension.
-- Extraction, search (4 modes), and RAG handlers wired around GraphRAG-style utilities.
-- DynamoDB-backed models for documents, schemas, data sources, requests, and Neo4j instances.
-- JWT authentication middleware for daemon mode (local users + Cognito).
-- `partition_key` passed exclusively via context — never as a client argument in mutations.
+- Multi-tenant routing uses `partition_key = "{endpoint_id}#{part_id}"`.
+- Each partition resolves one active Neo4j instance and one active graph schema.
+- Extraction, search, and RAG all run against that tenant-scoped graph context.
+- HTTP gateway, auth, and FastAPI hosting were moved out to `silvaengine_gateway`.
 
-## Architecture
+## Entry Points
 
-The engine follows a tenant-first execution path:
-
-1. Request parameters are normalized into `endpoint_id`, `part_id`, and `partition_key`.
-2. The partition resolves the **active Neo4j instance** from the registry model.
-3. Schema resolution uses the **active schema** for the partition (or a user-provided dict which becomes the new active).
-4. Extraction writes graph data and embeddings into the tenant's Neo4j instance.
-5. Search and RAG operate only against that tenant's active schema and indexes.
-
-This design keeps data isolation simple: one partition routes to one active Neo4j instance and one active schema.
-
-## Module Layout
-
-```text
-knowledge_graph_engine/
-  handlers/      Request orchestration, routing, extraction, search, RAG, auth, GraphQL schema
-  models/        DynamoDB models and supporting loaders
-  mutations/     GraphQL mutation entrypoints
-  queries/       GraphQL query resolvers
-  types/         GraphQL object types
-  utils/         Parsing, normalization, listeners, GraphRAG helpers
-  main.py        Engine class + daemon() + deploy() + main()
-  __main__.py    python -m entry point
-```
-
-## Usage
-
-### GraphQL Mode (SilvaEngine)
+### Engine usage
 
 ```python
 import logging
@@ -81,64 +49,60 @@ result = engine.knowledge_graph_graphql(
 )
 ```
 
-### Daemon Mode (FastAPI)
+### Gateway integration
 
-Start a standalone FastAPI server with JWT authentication:
+The gateway should call the module-level dispatch functions exposed from [main.py](C:\Users\bibo7\gitrepo\silvaengine\knowledge_graph_engine\knowledge_graph_engine\main.py):
 
-```python
-from knowledge_graph_engine.main import main
-main()  # Reads settings from environment variables
+- `knowledge_graph_engine.main:dispatch_graphql`
+- `knowledge_graph_engine.main:dispatch_extract`
+
+These functions create a short-lived engine instance using the already-initialized `Config` singleton.
+
+### Standalone invocation
+
+`python -m knowledge_graph_engine` is kept as a deprecation stub and only emits a warning. New deployments should run `silvaengine_gateway`.
+
+## Capabilities
+
+- Extraction via `executeExtract` mutation or `dispatch_extract`
+- Search modes:
+  - `vector`
+  - `text2cypher`
+  - `vector_cypher`
+  - `hybrid`
+- RAG over tenant-scoped graph retrieval
+- Active-only schema pattern per partition
+- Active-only Neo4j instance pattern per partition
+- DynamoDB-backed models for:
+  - documents
+  - graph schemas
+  - Neo4j instances
+  - requests
+  - document process errors
+
+## Repository Layout
+
+```text
+knowledge_graph_engine/
+  handlers/
+    extraction/         Extraction workflow and telemetry wrapper
+    schema_resolution/  Active-schema resolution and evolution
+    search/             Search and RAG handler implementations
+    config.py           Shared runtime configuration
+    neo4j_connection_manager.py
+    partition_manager.py
+  models/               DynamoDB models
+  mutations/            GraphQL mutation entrypoints
+  queries/              GraphQL query resolvers
+  schema.py             GraphQL schema definition
+  types/                GraphQL object types
+  utils/                GraphRAG helpers, parsing, normalization
+  main.py               Engine class, deploy(), dispatch_graphql(), dispatch_extract()
 ```
-
-Or via CLI:
-
-```bash
-python -m knowledge_graph_engine
-```
-
-The daemon exposes:
-- `POST /{endpoint_id}/knowledge_graph_graphql` — GraphQL endpoint (requires JWT token, `Part-Id` header)
-- `POST /{endpoint_id}/extract` — Background extraction (returns `task_id` immediately, for batch pipelines)
-- `GET /{endpoint_id}/extract/{task_id}` — Poll extraction status (`pending` → `running` → `completed`/`failed`)
-- `POST /auth/token` — Get JWT token (`username` + `password` form data)
-- `GET /me` — Current user info (requires JWT token)
-- `GET /health` — Health check (no auth required)
-
-### Search Modes
-
-The search layer accepts `search_mode` and also supports the legacy alias `search_type`.
-
-Supported values:
-
-- `vector`
-- `text2cypher`
-- `vector_cypher`
-- `hybrid`
-
-### Extraction Contract
-
-`Extractor.extract()` requires an explicit `partition_key` argument. The active schema for the partition is used automatically. If a `graph_schema` dict is provided, it becomes the new active schema (the old active one is deactivated).
-
-Two extraction modes are available in daemon mode:
-
-| Mode | Endpoint | Behavior |
-|---|---|---|
-| **Synchronous** | `executeExtract` GraphQL mutation | Runs in thread pool, returns result when done |
-| **Background** | `POST /{endpoint_id}/extract` | Returns `task_id` immediately, poll for result |
-
-Background extraction is designed for batch pipelines (Dagster, Airflow) where HTTP timeouts are a concern. Concurrency is controlled by `KGE_EXTRACT_WORKERS` (default: 4).
-
-### Active-Only Pattern
-
-Only one Neo4j instance and one graph schema can be active per partition at any time:
-
-- **Neo4j Instance**: `get_active_neo4j_instance(partition_key)` returns the active instance. When a new instance is inserted (or an existing one is activated), the previous active instance is automatically deactivated. The cached Neo4j driver is also closed so the new instance is picked up.
-- **Graph Schema**: `get_active_graph_schema(partition_key)` returns the active schema. Same auto-deactivation behavior. Extract, search, and RAG all use the active schema — `schema_name` is not exposed as a parameter in these operations.
-- **Schema CRUD**: Use `insertUpdateGraphSchema` / `deleteGraphSchema` mutations to manage multiple schemas. The `schema_name` field is only used as the DynamoDB range key for CRUD operations.
 
 ## Configuration
 
-### Core Settings
+Typical settings:
 
 ```python
 settings = {
@@ -149,55 +113,33 @@ settings = {
     "llm_type": "openai",
     "llm_name": "gpt-4o",
     "openai_api_key": "...",
+    "openai_base_url": None,
     "anthropic_api_key": "...",
+    "anthropic_base_url": None,
     "ollama_host": "http://localhost:11434",
     "embedding_model": "text-embedding-3-small",
 }
 ```
 
-### Daemon Mode Settings (environment variables)
+`partition_key` is never passed as a GraphQL mutation argument. It is derived from `endpoint_id` and `part_id` and attached through context.
 
-```bash
-# Server
-PORT=8000
-KGE_EXTRACT_WORKERS=4           # Concurrent background extraction threads (tune for LLM rate limits)
+## Notes
 
-# Auth
-AUTH_PROVIDER=local              # "local" or "cognito"
-JWT_SECRET_KEY=your-secret-key
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXP=30              # minutes
-
-# Local auth
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin
-LOCAL_USER_FILE=/path/to/users.json
-
-# Cognito auth (when AUTH_PROVIDER=cognito)
-# COGNITO_USER_POOL_ID=...
-# COGNITO_CLIENT_ID=...
-# COGNITO_REGION=...
-```
-
-## Development Notes
-
-- The package uses lazy top-level imports so helper modules can be imported without forcing the full runtime dependency stack.
-- A lightweight compatibility layer (`_compat.py`) allows the package and unit tests to run in minimal environments. It stubs `neo4j`, `neo4j-graphrag`, `silvaengine_dynamodb_base`, and `silvaengine_utility` (including the `Graphql` base class).
-- The GraphQL search and RAG resolvers normalize `search_type` into `search_mode` to preserve backward compatibility.
-- `partition_key` is never accepted as a client argument in mutations — it is always derived from `info.context`.
-- `schema_name` is not exposed in extract, search, or RAG operations — the active schema is always used.
-- When a `graph_schema` dict is provided in `executeExtract`, it is saved as the new active schema (deactivating the old one).
-- The `daemon()` method follows the `ai_mcp_daemon_engine` pattern: starts uvicorn with JWT middleware and auth router.
-- The GraphQL endpoint runs synchronous operations in a `ThreadPoolExecutor` to avoid blocking FastAPI's async event loop.
-- `GraphRAGUtil` instances are cached per partition in `Config._graph_rag_utils` and invalidated when the active Neo4j instance changes.
-- When multiple active records exist for a partition (data inconsistency), `get_active_neo4j_instance` / `get_active_graph_schema` choose the most recently updated one and log a warning.
+- `search_type` is no longer supported. Use `search_mode`.
+- `daemon()` on `KnowledgeGraphEngine` is deprecated and now only logs a warning.
+- `GraphRAGUtil` omits empty `base_url` values when constructing OpenAI/Anthropic clients.
+- `text2cypher` can now consume examples stored on the active graph schema record.
 
 ## Testing
 
-Run the project tests with:
+Run the test suite with:
 
 ```bash
 pytest -q tests
 ```
 
-If the workspace contains locked `pytest-cache-files-*` directories, scope pytest to `tests/` explicitly to avoid collection errors.
+For a quick smoke pass around the recent refactor:
+
+```bash
+pytest tests/test_import.py tests/test_search.py tests/test_module_hardening.py -q
+```

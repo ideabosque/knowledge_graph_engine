@@ -1,5 +1,7 @@
 # Knowledge Graph Engine - Development Plan
 
+> Historical note as of 2026-06-14: this document still captures the engine design and data/model rationale, but parts of the runtime section are no longer current. FastAPI hosting, auth, and gateway responsibilities were moved to `silvaengine_gateway`, and handler implementations were reorganized under `knowledge_graph_engine/handlers/extraction`, `knowledge_graph_engine/handlers/search`, and `knowledge_graph_engine/handlers/schema_resolution`.
+
 ## Executive Summary
 
 Rebuild `ai_kg_engine` as `knowledge_graph_engine` with tenant-isolated Neo4j instances, flexible schema resolution, four search modes, and RAG capabilities. Each tenant operates with a dedicated Neo4j Community Edition instance keyed by `partition_key` (`{endpoint_id}#{part_id}`), eliminating cross-tenant data leakage. Module structure, patterns, and conventions are aligned with `ai_agent_core_engine`.
