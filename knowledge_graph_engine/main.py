@@ -179,53 +179,9 @@ class KnowledgeGraphEngine(Graphql):
 # Module-level dispatch functions for gateway integration
 # ---------------------------------------------------------------------------
 # These are called by silvaengine_gateway via the route manifest's
-# ``dispatch`` field (e.g. "knowledge_graph_engine.main:dispatch_graphql").
+# ``adapter`` field (e.g. "knowledge_graph_engine.main:dispatch_graphql").
 # They create a short-lived KnowledgeGraphEngine instance using the
 # already-initialized Config singleton.
-# ---------------------------------------------------------------------------
-
-
-def dispatch_graphql(**params: Any) -> Any:
-    """
-    Module-level GraphQL dispatch — called by the gateway.
-
-    Requires Config.initialize() to have been called (done by the gateway
-    during app startup). Creates a KGE instance, applies partition defaults,
-    and executes the GraphQL query.
-    """
-    logger = Config.get_logger()
-    instance = KnowledgeGraphEngine(logger, **Config.get_setting())
-    return instance.knowledge_graph_graphql(**params)
-
-
-def dispatch_extract(**params: Any) -> Any:
-    """
-    Module-level extraction dispatch — called by the gateway.
-
-    Requires Config.initialize() to have been called. Creates a KGE instance,
-    applies partition defaults, and runs the extraction pipeline.
-    """
-    from .handlers.extraction.handler import Extractor
-    from .utils.listener import create_listener_info
-
-    logger = Config.get_logger()
-    setting = Config.get_setting()
-
-    instance = KnowledgeGraphEngine(logger, **setting)
-    instance._apply_partition_defaults(params)
-
-    info = create_listener_info(logger, "extract", setting, **params)
-    extractor = Extractor(info)
-    return extractor.extract(**params)
-
-
-# ---------------------------------------------------------------------------
-# Standalone dispatch functions
-#
-# These can be called directly by silvaengine_gateway's route manifest
-# without needing a KnowledgeGraphEngine instance. They create a fresh
-# instance from Config on each call (Config.initialize must have been
-# called first, typically by the gateway's startup lifespan).
 # ---------------------------------------------------------------------------
 
 

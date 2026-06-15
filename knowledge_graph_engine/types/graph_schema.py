@@ -19,6 +19,7 @@ class GraphSchemaType(ObjectType):
     schema_definition = Field(JSONCamelCase)
     source_text_hash = String()
     neo4j_schema_string = String()
+    text2cypher_examples = String()
 
     status = String()
     updated_by = String()

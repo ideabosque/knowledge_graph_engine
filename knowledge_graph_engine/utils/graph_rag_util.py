@@ -300,17 +300,27 @@ class GraphRAGUtil:
         neo4j_schema: Optional[str] = None,
         top_k: int = 10,
         is_result_formatter: bool = True,
+        examples: Optional[list] = None,
     ) -> Any:
         """
         LLM converts natural language to Cypher.
         If neo4j_schema is None, auto-fetches from tenant's Neo4j instance.
+
+        Args:
+            query_text: Natural language query
+            neo4j_schema: Schema string for the LLM context
+            top_k: Maximum number of results
+            is_result_formatter: Whether to apply default record formatter
+            examples: Optional list of example query→Cypher pairs to guide
+                      the LLM (e.g. ["Find flights from CDG to JFK in Business class: MATCH (f:Flight) WHERE f.route CONTAINS 'CDG' AND f.route CONTAINS 'JFK' AND f.cabinClass = 'Business' RETURN f"])
         """
         retriever = Text2CypherRetriever(
             driver=self.driver,
             llm=self.llm,
             neo4j_schema=neo4j_schema,
             neo4j_database=self.neo4j_database,
-            result_formatter=self.default_record_formatter if is_result_formatter else None
+            result_formatter=self.default_record_formatter if is_result_formatter else None,
+            examples=examples,
         )
         return retriever.search(query_text=query_text, prompt_params={"top_k": top_k})
 

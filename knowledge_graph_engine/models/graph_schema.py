@@ -45,6 +45,7 @@ class GraphSchemaModel(BaseModel):
     schema_definition = MapAttribute()
     source_text_hash = UnicodeAttribute(null=True)
     neo4j_schema_string = UnicodeAttribute(null=True)
+    text2cypher_examples = UnicodeAttribute(null=True)  # JSON list of example query→Cypher pairs
 
     status = UnicodeAttribute(default="active")
     updated_by = UnicodeAttribute(null=True)

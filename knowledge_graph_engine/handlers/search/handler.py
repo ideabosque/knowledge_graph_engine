@@ -94,11 +94,13 @@ class SearchHandler:
 
         elif search_mode == "text2cypher":
             neo4j_schema = self._load_neo4j_schema(partition_key)
+            examples = self._load_text2cypher_examples(partition_key)
             results = graph_rag.text2cypher_search(
                 query_text=query_text,
                 neo4j_schema=neo4j_schema,
                 top_k=top_k,
                 is_result_formatter=is_result_formatter,
+                examples=examples,
             )
 
         elif search_mode == "vector_cypher":
@@ -171,6 +173,25 @@ class SearchHandler:
             return record.neo4j_schema_string if record else None
         except Exception:
             return None
+
+    def _load_text2cypher_examples(self, partition_key: str) -> Optional[list]:
+        """Load text2cypher examples from the active graph schema record.
+
+        The examples field is a JSON-encoded list of strings, where each
+        string is a query→Cypher example pair, e.g.:
+        "Find flights from CDG to JFK Business: MATCH (f:Flight) WHERE f.route CONTAINS 'CDG' AND f.route CONTAINS 'JFK' AND f.cabinClass = 'Business' RETURN f"
+        """
+        import json
+
+        from ...models.graph_schema import get_active_graph_schema
+
+        try:
+            record = get_active_graph_schema(partition_key)
+            if record and record.text2cypher_examples:
+                return json.loads(record.text2cypher_examples)
+        except (json.JSONDecodeError, Exception):
+            pass
+        return None
 
     def _format_results(
         self, results: Any, page: int = 1, limit: int = 10
