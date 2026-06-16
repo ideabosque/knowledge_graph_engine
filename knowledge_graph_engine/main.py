@@ -5,8 +5,6 @@ from __future__ import print_function
 __author__ = "silvaengine"
 
 import logging
-import os
-import sys
 from typing import Any, Dict, List
 
 from graphene import Schema
@@ -135,8 +133,7 @@ class KnowledgeGraphEngine(Graphql):
     def _apply_partition_defaults(self, params: Dict[str, Any]) -> None:
         endpoint_id = params.get("endpoint_id", self.setting.get("endpoint_id"))
         part_id = params.get("metadata", {}).get(
-            "part_id",
-            params.get("part_id", self.setting.get("part_id")),
+            "part_id", params.get("part_id", self.setting.get("part_id"))
         )
 
         if params.get("context") is None:
@@ -150,111 +147,28 @@ class KnowledgeGraphEngine(Graphql):
         if "partition_key" not in params["context"]:
             if not endpoint_id or not part_id:
                 self.logger.error(
-                    f"Missing endpoint_id or part_id: endpoint_id={endpoint_id}, part_id={part_id}"
+                    "Missing endpoint_id or part_id: endpoint_id=%s, part_id=%s",
+                    endpoint_id,
+                    part_id,
                 )
                 raise ValueError(
                     "Both 'endpoint_id' and 'part_id' are required to generate 'partition_key'."
                 )
-            else:
-                params["context"]["partition_key"] = (
-                    PartitionManager.build_partition_key(endpoint_id, part_id)
-                )
-
-    def daemon(self):
-        """
-        Deprecated — gateway functionality has moved to silvaengine_gateway.
-
-        This method is retained as a stub so that any legacy call to
-        KnowledgeGraphEngine(...).daemon() does not crash, but it will
-        log a warning and exit. New deployments should run the gateway
-        package directly: `python -m silvaengine_gateway`
-        """
-        self.logger.warning(
-            "daemon() is deprecated. The FastAPI gateway has moved to the "
-            "silvaengine_gateway package. Run `python -m silvaengine_gateway` instead."
-        )
+            params["context"]["partition_key"] = PartitionManager.build_partition_key(
+                endpoint_id, part_id
+            )
 
 
-# ---------------------------------------------------------------------------
-# Module-level dispatch functions for gateway integration
-# ---------------------------------------------------------------------------
-# These are called by silvaengine_gateway via the route manifest's
-# ``adapter`` field (e.g. "knowledge_graph_engine.main:dispatch_graphql").
-# They create a short-lived KnowledgeGraphEngine instance using the
-# already-initialized Config singleton.
-# ---------------------------------------------------------------------------
+def _build_engine_from_config() -> KnowledgeGraphEngine:
+    """Create a short-lived engine from the initialized Config singleton."""
+    return KnowledgeGraphEngine(Config.get_logger(), **Config.get_setting())
 
 
 def dispatch_graphql(**params: Any) -> Any:
-    """Execute a GraphQL query/mutation against the Knowledge Graph Engine.
-
-    Requires Config.initialize() to have been called (done by gateway startup).
-    """
-    logger = Config.get_logger()
-    instance = KnowledgeGraphEngine(logger, **Config.get_setting())
-    return instance.knowledge_graph_graphql(**params)
+    """Execute a GraphQL query/mutation using gateway-initialized settings."""
+    return _build_engine_from_config().knowledge_graph_graphql(**params)
 
 
 def dispatch_extract(**params: Any) -> Any:
-    """Execute an extraction against the Knowledge Graph Engine.
-
-    Requires Config.initialize() to have been called (done by gateway startup).
-    """
-    logger = Config.get_logger()
-    instance = KnowledgeGraphEngine(logger, **Config.get_setting())
-    return instance.async_extract_knowledge_graph(**params)
-
-
-def main():
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    logging.basicConfig(
-        stream=sys.stdout,
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger("knowledge_graph_engine")
-
-    engine = KnowledgeGraphEngine(
-        logger,
-        **{
-            # AWS
-            "region_name": os.getenv("region_name"),
-            "aws_access_key_id": os.getenv("aws_access_key_id"),
-            "aws_secret_access_key": os.getenv("aws_secret_access_key"),
-            # Tenant
-            "endpoint_id": os.getenv("endpoint_id"),
-            "part_id": os.getenv("part_id"),
-            # Tables
-            "initialize_tables": int(os.getenv("initialize_tables", "0")),
-            "cache_enabled": int(os.getenv("cache_enabled", "0")),
-            # LLM
-            "llm_type": os.getenv("llm_type", "openai"),
-            "llm_name": os.getenv("llm_name", "gpt-4o"),
-            "openai_api_key": os.getenv("openai_api_key"),
-            "openai_base_url": os.getenv("openai_base_url"),
-            "anthropic_api_key": os.getenv("anthropic_api_key"),
-            "anthropic_base_url": os.getenv("anthropic_base_url"),
-            "ollama_host": os.getenv("ollama_host", "http://localhost:11434"),
-            "mistralai_api_key": os.getenv("mistralai_api_key"),
-            "vertexai_system_instruction": os.getenv("vertexai_system_instruction"),
-            # Embeddings
-            "embedding_provider": os.getenv("embedding_provider"),
-            "embedding_model": os.getenv("embedding_model", "text-embedding-3-small"),
-            # Neo4j
-            "neo4j_uri": os.getenv("neo4j_uri", "bolt://localhost:7687"),
-            "neo4j_username": os.getenv("neo4j_username", "neo4j"),
-            "neo4j_password": os.getenv("neo4j_password"),
-            "neo4j_database": os.getenv("neo4j_database", "neo4j"),
-        },
-    )
-
-    # daemon() is deprecated — gateway is now silvaengine_gateway package.
-    # Kept here so `python -m knowledge_graph_engine` still runs without crash.
-    logger.warning(
-        "Running KGE as standalone is deprecated. "
-        "Use `python -m silvaengine_gateway` to start the gateway."
-    )
-    engine.daemon()
+    """Execute an extraction using gateway-initialized settings."""
+    return _build_engine_from_config().async_extract_knowledge_graph(**params)
