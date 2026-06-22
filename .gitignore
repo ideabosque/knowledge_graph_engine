@@ -210,3 +210,11 @@ pytest-cache*
 
 # Claude Code local settings
 .claude/
+.vscode/
+.zed
+AGENTS.md
+CLAUDE.md
+# Agent / tooling scratch dirs (never commit)
+.codex/
+.agents/
+.pytest-tmp/
