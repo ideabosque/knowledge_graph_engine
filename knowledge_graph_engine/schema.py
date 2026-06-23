@@ -146,42 +146,46 @@ class Query(ObjectType):
         return resolve_graph_schema_list(info, **kwargs)
 
     def resolve_neo4j_instance(self, info: ResolveInfo, **kwargs: Any) -> Neo4jInstanceType | None:
-        from .models.neo4j_instance import get_neo4j_instance, get_neo4j_instance_type
+        from .models.repositories import get_repo
 
         partition_key = info.context.get("partition_key")
         instance_id = kwargs.get("instance_id")
         if not partition_key or not instance_id:
             return None
         try:
-            instance = get_neo4j_instance(partition_key, instance_id)
-            return get_neo4j_instance_type(info, instance)
+            repo = get_repo("neo4j_instance")
+            return repo.resolve_single(info, instance_id=instance_id)
         except Exception:
             return None
 
     def resolve_neo4j_instance_list(self, info: ResolveInfo, **kwargs: Any) -> Neo4jInstanceListType:
-        from .models.neo4j_instance import resolve_neo4j_instance_list as _resolve_neo4j_instance_list
+        from .models.repositories import get_repo
 
-        return _resolve_neo4j_instance_list(info, **kwargs)
+        repo = get_repo("neo4j_instance")
+        return repo.list(info, **kwargs)
 
     def resolve_request(self, info: ResolveInfo, **kwargs: Any) -> RequestType | None:
-        from .models.request import get_request, get_request_count, get_request_type
+        from .models.repositories import get_repo
 
         partition_key = info.context.get("partition_key")
         request_uuid = kwargs.get("request_uuid")
         if not partition_key or not request_uuid:
             return None
         try:
-            count = get_request_count(partition_key, request_uuid)
-            if count == 0:
+            repo = get_repo("request")
+            data = repo.get(partition_key=partition_key, request_uuid=request_uuid)
+            if data is None:
                 return None
-            return get_request_type(info, get_request(partition_key, request_uuid))
+            from .utils.normalization import normalize_to_json
+            return RequestType(**normalize_to_json(data))
         except Exception:
             return None
 
     def resolve_request_list(self, info: ResolveInfo, **kwargs: Any) -> RequestListType:
-        from .models.request import resolve_request_list as _resolve_request_list
+        from .models.repositories import get_repo
 
-        return _resolve_request_list(info, **kwargs)
+        repo = get_repo("request")
+        return repo.list(info, **kwargs)
 
     def resolve_search(self, info: ResolveInfo, **kwargs: Any) -> SearchResultType:
         return resolve_search(info, **kwargs)

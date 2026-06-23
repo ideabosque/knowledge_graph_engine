@@ -9,13 +9,13 @@ Guidelines for AI coding agents working on the Knowledge Graph Engine repository
 pip install -e .
 
 # Run all tests
-pytest tests/
+pytest knowledge_graph_engine/tests/
 
 # Run single test file
-pytest tests/test_extract.py -v
+pytest knowledge_graph_engine/tests/test_extract.py -v
 
 # Run specific test
-pytest tests/test_extract.py::TestExtractor::test_extract -v
+pytest knowledge_graph_engine/tests/test_extract.py::TestExtractor::test_extract -v
 
 # Run with markers (unit/integration/extract/search)
 pytest -m unit
@@ -98,7 +98,7 @@ from ..types.document import DocumentType
 ### Testing
 - Unit tests: No external dependencies, mock everything
 - Integration tests: Use `@pytest.mark.integration`
-- Fixtures in `conftest.py` (mock_logger, mock_info, partition_key)
+- Fixtures in `knowledge_graph_engine/tests/conftest.py` (mock_logger, mock_info, partition_key)
 - Test markers: `unit`, `integration`, `extract`, `search`
 
 ### Documentation

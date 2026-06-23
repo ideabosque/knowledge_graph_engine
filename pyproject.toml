@@ -18,9 +18,36 @@ dependencies = [
     "nest-asyncio>=1.5",
 ]
 
+[project.optional-dependencies]
+postgresql = [
+    "SQLAlchemy>=1.4",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.10",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "python-dotenv>=1.0",
+    "SQLAlchemy>=1.4",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.10",
+]
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["knowledge_graph_engine/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (DB, API)",
+    "extract: Knowledge graph extraction tests",
+    "search: Search and RAG tests",
+]
 
 [tool.pyright]
 typeCheckingMode = "basic"

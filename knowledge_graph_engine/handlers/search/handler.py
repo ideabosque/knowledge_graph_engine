@@ -142,7 +142,7 @@ class SearchHandler:
     ) -> None:
         """Persist search request to kge-requests table."""
         try:
-            from ...models.request import insert_update_request
+            from ...models.repositories import get_repo
             from ...utils.listener import create_listener_info
 
             logger = self.context.get("logger")
@@ -151,7 +151,8 @@ class SearchHandler:
                 logger, "search", setting, partition_key=partition_key
             ) if logger else self.info
 
-            insert_update_request(
+            repo = get_repo("request")
+            repo.insert_update(
                 info,
                 partition_key=partition_key,
                 user_query=query_text,
@@ -166,11 +167,12 @@ class SearchHandler:
 
     def _load_neo4j_schema(self, partition_key: str) -> Optional[str]:
         """Load the active schema string for text2cypher generation."""
-        from ...models.graph_schema import get_active_graph_schema
+        from ...models.repositories import get_repo
 
         try:
-            record = get_active_graph_schema(partition_key)
-            return record.neo4j_schema_string if record else None
+            repo = get_repo("graph_schema")
+            record = repo.resolve_active(partition_key)
+            return record.get("neo4j_schema_string") if record else None
         except Exception:
             return None
 
@@ -183,12 +185,13 @@ class SearchHandler:
         """
         import json
 
-        from ...models.graph_schema import get_active_graph_schema
+        from ...models.repositories import get_repo
 
         try:
-            record = get_active_graph_schema(partition_key)
-            if record and record.text2cypher_examples:
-                return json.loads(record.text2cypher_examples)
+            repo = get_repo("graph_schema")
+            record = repo.resolve_active(partition_key)
+            if record and record.get("text2cypher_examples"):
+                return json.loads(record["text2cypher_examples"])
         except (json.JSONDecodeError, Exception):
             pass
         return None
@@ -315,7 +318,7 @@ class RAGHandler:
     ) -> None:
         """Persist RAG request to kge-requests table."""
         try:
-            from ...models.request import insert_update_request
+            from ...models.repositories import get_repo
             from ...utils.listener import create_listener_info
 
             logger = self.context.get("logger")
@@ -324,7 +327,8 @@ class RAGHandler:
                 logger, "rag", setting, partition_key=partition_key
             ) if logger else self.info
 
-            insert_update_request(
+            repo = get_repo("request")
+            repo.insert_update(
                 info,
                 partition_key=partition_key,
                 user_query=query_text,
@@ -366,12 +370,13 @@ class RAGHandler:
 
     def _load_schema_context(self, partition_key: str) -> str:
         """Load the active schema context for RAG enrichment."""
-        from ...models.graph_schema import get_active_graph_schema
+        from ...models.repositories import get_repo
 
         try:
-            record = get_active_graph_schema(partition_key)
-            if record and record.neo4j_schema_string:
-                return f"\nGraph schema for this tenant:\n{record.neo4j_schema_string}\n"
+            repo = get_repo("graph_schema")
+            record = repo.resolve_active(partition_key)
+            if record and record.get("neo4j_schema_string"):
+                return f"\nGraph schema for this tenant:\n{record['neo4j_schema_string']}\n"
         except Exception:
             pass
         return ""

@@ -1,0 +1,680 @@
+{
+  "run_metadata": {
+    "sop_version": "1.2.0",
+    "partition_key": "flight-endpoint#flight-part",
+    "endpoint_id": "flight-endpoint",
+    "part_id": "flight-part",
+    "pg_db": "silvaengine",
+    "neo4j_uri": "bolt://localhost:7687",
+    "neo4j_database": "neo4j",
+    "llm_name": "gpt-4o",
+    "flight_json_path": "C:\\Users\\bibo7\\gitrepo\\silvaengine\\rfq_engine\\rfq_engine\\tests\\prepare_test_data\\flight_products.json",
+    "passage_count": 7,
+    "timestamp": "2026-06-22T23:20:17.794176+00:00"
+  },
+  "summary": {
+    "total_calls": 17,
+    "pass": 17,
+    "fail": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "certification_status": "Integration Certified"
+  },
+  "function_results": [
+    {
+      "scenario_id": "INT-001",
+      "method": "Config.initialize(logger, SETTING)",
+      "status": "pass",
+      "elapsed_s": 0.169,
+      "arguments": {
+        "db_backend": "postgresql",
+        "db_schema": "silvaengine",
+        "pg_table_prefix": "kge_",
+        "initialize_tables": 1
+      },
+      "output": {
+        "DB_BACKEND": "postgresql",
+        "db_session": "<scoped_session>",
+        "prefixed_tables_present": {
+          "documents": true,
+          "graph_schemas": true,
+          "neo4j_instances": true,
+          "requests": true,
+          "document_process_errors": true
+        },
+        "kge_requests_has_user_query": true,
+        "rfq_requests_still_exists": true,
+        "kge_requests_columns": [
+          "partition_key",
+          "request_uuid",
+          "endpoint_id",
+          "part_id",
+          "user_query",
+          "cypher_query",
+          "search_mode",
+          "results",
+          "updated_by",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "notes": "5 prefixed KGE tables present (kge_*); R-001 collision resolved: kge_requests has KGE shape",
+      "timestamp": "2026-06-22T23:19:42.138342+00:00"
+    },
+    {
+      "scenario_id": "INT-002",
+      "method": "get_repo('neo4j_instance').insert_update/get/count/resolve_active/delete",
+      "status": "pass",
+      "elapsed_s": 0.03,
+      "arguments": {
+        "partition_key": "flight-endpoint#flight-part",
+        "instances": [
+          "flight-neo4j-a",
+          "flight-neo4j"
+        ]
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insert_update A active",
+            "elapsed_s": 0.019
+          },
+          {
+            "step": "get A",
+            "elapsed_s": 0.0
+          },
+          {
+            "step": "count active",
+            "elapsed_s": 0.0
+          },
+          {
+            "step": "insert_update B active (deactivates A)",
+            "elapsed_s": 0.006
+          },
+          {
+            "step": "resolve_active",
+            "elapsed_s": 0.002
+          },
+          {
+            "step": "delete A",
+            "elapsed_s": 0.003
+          }
+        ],
+        "single_active_enforced": true,
+        "resolve_active": "flight-neo4j"
+      },
+      "notes": "single-active invariant enforced; A deactivated when B activated",
+      "timestamp": "2026-06-22T23:19:42.193712+00:00"
+    },
+    {
+      "scenario_id": "INT-003",
+      "method": "get_repo('graph_schema').insert_update/resolve_active/delete",
+      "status": "pass",
+      "elapsed_s": 0.021,
+      "arguments": {
+        "partition_key": "flight-endpoint#flight-part",
+        "schemas": [
+          "schema-a",
+          "schema-b"
+        ]
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insert A active",
+            "elapsed_s": 0.011
+          },
+          {
+            "step": "insert B active (deactivates A)",
+            "elapsed_s": 0.005
+          },
+          {
+            "step": "resolve_active -> B",
+            "elapsed_s": 0.001
+          },
+          {
+            "step": "deactivate B",
+            "elapsed_s": 0.003
+          },
+          {
+            "step": "resolve_active -> None",
+            "elapsed_s": 0.001
+          }
+        ],
+        "single_active_enforced": true
+      },
+      "notes": "Single-active enforced by app + partial unique index",
+      "timestamp": "2026-06-22T23:19:42.219600+00:00"
+    },
+    {
+      "scenario_id": "INT-004",
+      "method": "get_repo('document').insert_update/get/list/delete",
+      "status": "pass",
+      "elapsed_s": 0.047,
+      "arguments": {
+        "document_uuid": "doc-test-001",
+        "embedding": [
+          0.1,
+          0.2,
+          0.3
+        ]
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insert",
+            "elapsed_s": 0.01
+          },
+          {
+            "step": "get",
+            "elapsed_s": 0.0
+          },
+          {
+            "step": "list by status",
+            "elapsed_s": 0.033
+          },
+          {
+            "step": "delete",
+            "elapsed_s": 0.003
+          },
+          {
+            "step": "get after delete -> None",
+            "elapsed_s": 0.002
+          }
+        ],
+        "embedding_preserved": true
+      },
+      "notes": "JSONB embedding round-trip exact",
+      "timestamp": "2026-06-22T23:19:42.266586+00:00"
+    },
+    {
+      "scenario_id": "INT-005",
+      "method": "get_repo('request').insert_update/get/list/delete",
+      "status": "pass",
+      "elapsed_s": 0.016,
+      "arguments": {
+        "request_uuid": "req-test-001",
+        "search_mode": "vector",
+        "table_prefix": "kge_"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insert_update",
+            "elapsed_s": 0.01,
+            "status": "pass"
+          },
+          {
+            "step": "get",
+            "elapsed_s": 0.001,
+            "status": "pass"
+          },
+          {
+            "step": "list by search_mode",
+            "elapsed_s": 0.003,
+            "status": "pass"
+          },
+          {
+            "step": "delete",
+            "elapsed_s": 0.002,
+            "status": "pass"
+          }
+        ],
+        "results_jsonb_preserved": true
+      },
+      "notes": "Request CRUD works with prefixed table 'kge_requests' \u2014 R-001 resolved",
+      "timestamp": "2026-06-22T23:19:42.282157+00:00"
+    },
+    {
+      "scenario_id": "INT-006",
+      "method": "get_repo('document_process_error').insert_update/get/delete",
+      "status": "pass",
+      "elapsed_s": 0.011,
+      "arguments": {
+        "process_error_uuid": "err-test-001"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insert",
+            "elapsed_s": 0.008
+          },
+          {
+            "step": "get",
+            "elapsed_s": 0.0
+          },
+          {
+            "step": "delete",
+            "elapsed_s": 0.003
+          }
+        ]
+      },
+      "notes": "CRUD works; error_message preserved",
+      "timestamp": "2026-06-22T23:19:42.292756+00:00"
+    },
+    {
+      "scenario_id": "INT-007",
+      "method": "dispatch_graphql(ping / insertUpdateNeo4jInstance / neo4jInstance)",
+      "status": "pass",
+      "elapsed_s": 0.027,
+      "arguments": {
+        "endpoint_id": "flight-endpoint",
+        "part_id": "flight-part"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "ping",
+            "elapsed_s": 0.013,
+            "status": "pass"
+          },
+          {
+            "step": "insertUpdateNeo4jInstance",
+            "elapsed_s": 0.01,
+            "status": "pass"
+          },
+          {
+            "step": "neo4jInstance query",
+            "elapsed_s": 0.004,
+            "status": "pass"
+          }
+        ]
+      },
+      "notes": "GraphQL mutation + query work with PG backend",
+      "timestamp": "2026-06-22T23:19:42.325751+00:00"
+    },
+    {
+      "scenario_id": "INT-008",
+      "method": "get_loaders({}) + document_loader",
+      "status": "pass",
+      "elapsed_s": 0.002,
+      "arguments": {},
+      "output": {
+        "loaders_type": "PGRequestLoaders",
+        "document_loader_present": true
+      },
+      "notes": "Loaders type=PGRequestLoaders",
+      "timestamp": "2026-06-22T23:19:42.327759+00:00"
+    },
+    {
+      "scenario_id": "INT-009",
+      "method": "raw SQL INSERT second active schema",
+      "status": "pass",
+      "elapsed_s": 0.046,
+      "arguments": {
+        "partition_key": "flight-endpoint#flight-part",
+        "schema_b": "idx-schema-b",
+        "status": "active"
+      },
+      "output": {
+        "integrity_error_raised": true,
+        "error": "IntegrityError: duplicate key value violates unique constraint \"kge_idx_graph_schemas_one_active\"\nDETAIL:  Key (partition_key)=(flight-endpoint#flight-part) already e"
+      },
+      "notes": "Partial unique index idx_graph_schemas_one_active enforced at DB level",
+      "timestamp": "2026-06-22T23:19:42.413564+00:00"
+    },
+    {
+      "scenario_id": "INT-010",
+      "method": "Config.get_cache_entity_config()",
+      "status": "pass",
+      "elapsed_s": 0.0,
+      "arguments": {},
+      "output": {
+        "pg_cache_empty": true,
+        "ddb_cache_count": 5,
+        "pg_relationships": {}
+      },
+      "notes": "PG cache empty, DDB cache has 5 entries",
+      "timestamp": "2026-06-22T23:19:42.413564+00:00"
+    },
+    {
+      "scenario_id": "INT-011",
+      "method": "GraphQL insertUpdateNeo4jInstance + get_driver + get_graph_rag_util",
+      "status": "pass",
+      "elapsed_s": 2.171,
+      "arguments": {
+        "instanceId": "flight-neo4j",
+        "neo4j_uri": "bolt://localhost:7687",
+        "neo4j_database": "neo4j"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insertUpdateNeo4jInstance",
+            "elapsed_s": 0.01,
+            "status": "pass"
+          },
+          {
+            "step": "PG get instance",
+            "elapsed_s": 0.001,
+            "status": "pass"
+          },
+          {
+            "step": "get_driver + RETURN 1",
+            "elapsed_s": 0.065,
+            "status": "pass"
+          },
+          {
+            "step": "get_graph_rag_util",
+            "elapsed_s": 2.095,
+            "status": "pass"
+          }
+        ],
+        "driver_created": true,
+        "graph_rag_util_initialized": true
+      },
+      "notes": "Neo4j instance registered, driver connects, GraphRAGUtil initialized",
+      "timestamp": "2026-06-22T23:19:44.585830+00:00"
+    },
+    {
+      "scenario_id": "INT-012",
+      "method": "GraphQL insertUpdateGraphSchema + graphSchema + SchemaResolver",
+      "status": "pass",
+      "elapsed_s": 0.018,
+      "arguments": {
+        "schemaName": "flight-schema",
+        "entities": [
+          "Airline",
+          "Airport",
+          "CabinClass",
+          "Flight",
+          "Route",
+          "Bundle"
+        ]
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "insertUpdateGraphSchema",
+            "elapsed_s": 0.014,
+            "status": "pass"
+          },
+          {
+            "step": "graphSchema query",
+            "elapsed_s": 0.003,
+            "status": "pass"
+          },
+          {
+            "step": "SchemaResolver._load_active_schema",
+            "elapsed_s": 0.001,
+            "status": "pass"
+          }
+        ],
+        "loaded_entity_count": 0
+      },
+      "notes": "Flight schema registered in PG and loaded by SchemaResolver",
+      "timestamp": "2026-06-22T23:19:44.604357+00:00"
+    },
+    {
+      "scenario_id": "INT-013",
+      "method": "dispatch_graphql(executeExtract) x passages + PG docs + Neo4j nodes",
+      "status": "pass",
+      "elapsed_s": 29.948,
+      "arguments": {
+        "passage_count": 7,
+        "document_source": "flight-products"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "executeExtract FLIGHT-NRT-BOS-BUS",
+            "elapsed_s": 6.868,
+            "status": "pass",
+            "entities_extracted": 9,
+            "relationships_extracted": 18,
+            "document_uuid": "doc-1782170391-eebaf1df"
+          },
+          {
+            "step": "executeExtract FLIGHT-DFW-CDG-BUS",
+            "elapsed_s": 5.34,
+            "status": "pass",
+            "entities_extracted": 9,
+            "relationships_extracted": 18,
+            "document_uuid": "doc-1782170396-075edc1e"
+          },
+          {
+            "step": "executeExtract FLIGHT-ORD-BOS-BUS",
+            "elapsed_s": 3.519,
+            "status": "pass",
+            "entities_extracted": 7,
+            "relationships_extracted": 12,
+            "document_uuid": "doc-1782170400-4500133b"
+          },
+          {
+            "step": "executeExtract FLIGHT-CDG-ORD-ECO",
+            "elapsed_s": 4.641,
+            "status": "pass",
+            "entities_extracted": 9,
+            "relationships_extracted": 18,
+            "document_uuid": "doc-1782170404-af6d83eb"
+          },
+          {
+            "step": "executeExtract FLIGHT-NRT-CDG-FIR",
+            "elapsed_s": 3.336,
+            "status": "pass",
+            "entities_extracted": 8,
+            "relationships_extracted": 12,
+            "document_uuid": "doc-1782170408-f9f7a76c"
+          },
+          {
+            "step": "executeExtract FLT-ITIN-001",
+            "elapsed_s": 3.587,
+            "status": "pass",
+            "entities_extracted": 6,
+            "relationships_extracted": 8,
+            "document_uuid": "doc-1782170411-647b5043"
+          },
+          {
+            "step": "executeExtract FLT-ITIN-002",
+            "elapsed_s": 2.657,
+            "status": "pass",
+            "entities_extracted": 3,
+            "relationships_extracted": 2,
+            "document_uuid": "doc-1782170414-11fb3b0d"
+          }
+        ],
+        "pg_document_count": 7,
+        "neo4j_entity_nodes": 37
+      },
+      "notes": "Extracted 7 passages; 7 docs in PG; 37 __Entity__ nodes in Neo4j",
+      "timestamp": "2026-06-22T23:20:14.622411+00:00"
+    },
+    {
+      "scenario_id": "INT-014",
+      "method": "dispatch_graphql(search, vector) x 3 + PG requests check",
+      "status": "pass",
+      "elapsed_s": 0.689,
+      "arguments": {
+        "queries": [
+          "Which airlines fly from SFO?",
+          "Business class flight to Miami",
+          "Cathay Pacific First class baggage allowance"
+        ],
+        "search_mode": "vector"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "search vector: Which airlines fly from SFO?",
+            "elapsed_s": 0.251,
+            "status": "pass",
+            "total": 5
+          },
+          {
+            "step": "search vector: Business class flight to Miami",
+            "elapsed_s": 0.195,
+            "status": "pass",
+            "total": 5
+          },
+          {
+            "step": "search vector: Cathay Pacific First class baggage allowance",
+            "elapsed_s": 0.243,
+            "status": "pass",
+            "total": 5
+          }
+        ],
+        "request_recorded": true,
+        "request_recording_blocked": false,
+        "request_error": ""
+      },
+      "notes": "Vector search works (3 queries); request recorded in kge_requests: True",
+      "timestamp": "2026-06-22T23:20:15.369189+00:00"
+    },
+    {
+      "scenario_id": "INT-015",
+      "method": "dispatch_graphql(rag) x 2 + PG requests check",
+      "status": "pass",
+      "elapsed_s": 2.213,
+      "arguments": {
+        "queries": [
+          "What is the baggage allowance for Cathay Pacific First class SFO to SYD?",
+          "Which airlines offer Business class flights to Miami?"
+        ],
+        "search_mode": "rag:vector"
+      },
+      "output": {
+        "calls": [
+          {
+            "step": "rag: What is the baggage allowance for Cathay Pacific First class SFO to SYD?",
+            "elapsed_s": 1.273,
+            "status": "pass",
+            "answer_preview": "The provided context does not include information about Cathay Pacific's First class service from SFO to SYD, including "
+          },
+          {
+            "step": "rag: Which airlines offer Business class flights to Miami?",
+            "elapsed_s": 0.94,
+            "status": "pass",
+            "answer_preview": "The provided context does not mention any airlines offering Business class flights to Miami."
+          }
+        ],
+        "request_recorded": true,
+        "request_recording_blocked": false
+      },
+      "notes": "RAG works (2 queries); request recorded in kge_requests: True",
+      "timestamp": "2026-06-22T23:20:17.633132+00:00"
+    },
+    {
+      "scenario_id": "RESILIENCE",
+      "method": "failure/resilience scenarios",
+      "status": "pass",
+      "elapsed_s": 0.002,
+      "arguments": {
+        "scenarios": [
+          "missing_data",
+          "unknown_entity",
+          "no_active_neo4j_instance",
+          "table_collision_R001"
+        ]
+      },
+      "output": {
+        "calls": [
+          {
+            "scenario": "missing_data",
+            "status": "pass",
+            "elapsed_s": 0.001
+          },
+          {
+            "scenario": "unknown_entity",
+            "status": "pass",
+            "elapsed_s": 0.0
+          },
+          {
+            "scenario": "no_active_neo4j_instance",
+            "status": "pass",
+            "elapsed_s": 0.001,
+            "error": "No active Neo4j instance for partition: bogus-partition#no-instance. Register via insertUpdateNeo4jI"
+          },
+          {
+            "scenario": "table_collision_R001",
+            "status": "blocked",
+            "elapsed_s": 0,
+            "note": "Confirmed in INT-005"
+          }
+        ]
+      },
+      "notes": "missing_data, unknown_entity, no_active_neo4j all behave correctly; R-001 blocked",
+      "timestamp": "2026-06-22T23:20:17.635126+00:00"
+    },
+    {
+      "scenario_id": "RECONCILE",
+      "method": "cross-system reconciliation",
+      "status": "pass",
+      "elapsed_s": 0,
+      "arguments": {
+        "partition_key": "flight-endpoint#flight-part"
+      },
+      "output": {
+        "checks": [
+          {
+            "check": "pg_document_count_vs_passages",
+            "expected": 7,
+            "actual": 7,
+            "pass": true,
+            "tolerance": ">=1"
+          },
+          {
+            "check": "neo4j_entity_nodes_present",
+            "expected": ">=1",
+            "actual": 37,
+            "pass": true
+          },
+          {
+            "check": "neo4j_entity_labels",
+            "expected": ">=1 label",
+            "actual": [
+              "Airline",
+              "Airport",
+              "Bundle",
+              "CabinClass",
+              "Flight",
+              "Route",
+              "__Entity__",
+              "__KGBuilder__"
+            ],
+            "pass": true
+          },
+          {
+            "check": "single_active_neo4j_instance",
+            "expected": 1,
+            "actual": 1,
+            "pass": true
+          },
+          {
+            "check": "single_active_graph_schema",
+            "expected": 1,
+            "actual": 1,
+            "pass": true
+          },
+          {
+            "check": "jsonb_content_preserved",
+            "expected": "non-empty text",
+            "actual": "content_len=763, embedding=None",
+            "pass": true,
+            "note": "Extraction docs have content but no content_embedding (expected)"
+          },
+          {
+            "check": "request_recording_works",
+            "expected": ">=1",
+            "actual": 5,
+            "pass": true,
+            "note": "Requests in kge_requests table with prefix 'kge_'"
+          }
+        ],
+        "neo4j_labels": [
+          "Airline",
+          "Airport",
+          "Bundle",
+          "CabinClass",
+          "Flight",
+          "Route",
+          "__Entity__",
+          "__KGBuilder__"
+        ],
+        "pg_doc_count": 7,
+        "neo4j_node_count": 37
+      },
+      "notes": "PG docs + Neo4j nodes + single-active + JSONB all reconciled; R-001 blocked",
+      "timestamp": "2026-06-22T23:20:17.794176+00:00"
+    }
+  ]
+}

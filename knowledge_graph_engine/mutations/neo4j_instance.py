@@ -5,13 +5,9 @@ __author__ = "silvaengine"
 
 import traceback
 
-from graphene import Field, Int, Mutation, String
+from graphene import Int, Mutation, String
 
-from ..models.neo4j_instance import (
-    insert_update_neo4j_instance,
-    delete_neo4j_instance,
-    get_neo4j_instance,
-)
+from ..models.repositories import get_repo
 from ..types.neo4j_instance import Neo4jInstanceType
 from ..handlers.config import Config
 
@@ -37,10 +33,11 @@ class InsertUpdateNeo4jInstance(Mutation):
 
         if not partition_key:
             raise ValueError("partition_key is required in context")
-        
+
         try:
-            insert_update_neo4j_instance(info, **kwargs)
-            return get_neo4j_instance(partition_key, instance_id)
+            repo = get_repo("neo4j_instance")
+            repo.insert_update(info, **kwargs)
+            return repo.resolve_single(info, instance_id=instance_id)
         except Exception as e:
             logger.error(f"InsertUpdateNeo4jInstance error: {traceback.format_exc()}")
             raise e
@@ -60,10 +57,12 @@ class DeleteNeo4jInstance(Mutation):
 
         if not partition_key:
             raise ValueError("partition_key is required in context")
-        
+
         try:
-            instance = get_neo4j_instance(partition_key, instance_id)
-            delete_neo4j_instance(info, entity=instance)
+            repo = get_repo("neo4j_instance")
+            data = repo.get(partition_key=partition_key, instance_id=instance_id)
+            if data:
+                repo.delete(info, partition_key=partition_key, instance_id=instance_id)
             return "deleted"
         except Exception as e:
             logger.error(f"DeleteNeo4jInstance error: {traceback.format_exc()}")

@@ -3,10 +3,10 @@ from __future__ import print_function
 
 __author__ = "silvaengine"
 
-from graphene import Field, Mutation, String
+from graphene import Mutation, String
 from silvaengine_utility import JSONCamelCase
 
-from ..models.graph_schema import insert_update_graph_schema, delete_graph_schema
+from ..models.repositories import get_repo
 from ..types.graph_schema import GraphSchemaType
 
 
@@ -31,11 +31,10 @@ class InsertUpdateGraphSchema(Mutation):
             raise ValueError("partition_key is required in context")
 
         kwargs["partition_key"] = partition_key
-        insert_update_graph_schema(info, **kwargs)
-        from ..models.graph_schema import get_graph_schema
-
+        repo = get_repo("graph_schema")
+        repo.insert_update(info, **kwargs)
         schema_name = kwargs.get("schema_name")
-        return get_graph_schema(partition_key, schema_name)
+        return repo.resolve_single(info, schema_name=schema_name)
 
 
 class DeleteGraphSchema(Mutation):
@@ -46,14 +45,14 @@ class DeleteGraphSchema(Mutation):
 
     @staticmethod
     def mutate(root, info, **kwargs):
-        from ..models.graph_schema import get_graph_schema
-
         partition_key = info.context.get("partition_key")
 
         if not partition_key:
             raise ValueError("partition_key is required in context")
 
         schema_name = kwargs.get("schema_name")
-        schema = get_graph_schema(partition_key, schema_name)
-        delete_graph_schema(info, entity=schema)
+        repo = get_repo("graph_schema")
+        data = repo.get(partition_key=partition_key, schema_name=schema_name)
+        if data:
+            repo.delete(info, partition_key=partition_key, schema_name=schema_name)
         return "deleted"

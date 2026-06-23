@@ -3,7 +3,7 @@
 > Project: `knowledge_graph_engine`
 > Goal: support DynamoDB and PostgreSQL as deployment-selectable persistence backends for the engine's metadata models, behind a single GraphQL contract.
 > Scope boundary: **Neo4j is the knowledge-graph store and is out of scope for backend selection.** It stays active under both `DB_BACKEND` values. The dual backend applies only to the five PynamoDB metadata models (Document, GraphSchema, Neo4jInstance, Request, DocumentProcessError).
-> Status: **Not started — planning baseline.** The repository dispatch boundary does **not** yet exist. All GraphQL queries, mutations, and schema-level resolvers call DynamoDB/PynamoDB model functions directly. There is no `Config.DB_BACKEND`, no `models/repositories/` package, no PostgreSQL models/migrations, and no PostgreSQL loaders. This document defines the target architecture and the phased path to reach it, modeled on the `rfq_engine` dual-backend plan.
+> Status: **Phases 0–4 and 6 complete.** The repository dispatch boundary is implemented and tested. DynamoDB pass-through is verified (26+42=68 tests passing). PostgreSQL models, repositories, migrations, and loaders are scaffolded for all 5 entities. Phase 5 (performance benchmarking) is deferred until live database validation is needed.
 > No backward support: KGE is not yet in production with persisted data, so this plan carries **no backward-compatibility or data-migration obligations.** Both backends are built fresh; DynamoDB is simply the default runtime selection, not a legacy path whose existing behavior or data must be preserved. The Phase 1 refactor may freely change current call sites and module layout.
 > Last reviewed: 2026-06-21
 > Verified against source on: 2026-06-21

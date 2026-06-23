@@ -88,24 +88,7 @@ def deploy() -> List:
 
 class KnowledgeGraphEngine(Graphql):
     def __init__(self, logger: logging.Logger, **setting: Any) -> None:
-        from silvaengine_dynamodb_base import BaseModel
-
         Graphql.__init__(self, logger, **setting)
-
-        if (
-            setting.get("region_name")
-            and setting.get("aws_access_key_id")
-            and setting.get("aws_secret_access_key")
-        ):
-            if hasattr(BaseModel.Meta, "region"):
-                BaseModel.Meta.region = setting.get("region_name")
-            if hasattr(BaseModel.Meta, "aws_access_key_id"):
-                BaseModel.Meta.aws_access_key_id = setting.get("aws_access_key_id")
-            if hasattr(BaseModel.Meta, "aws_secret_access_key"):
-                BaseModel.Meta.aws_secret_access_key = setting.get(
-                    "aws_secret_access_key"
-                )
-
         Config.initialize(logger, setting)
 
     def knowledge_graph_graphql(self, **params: Any) -> Any:

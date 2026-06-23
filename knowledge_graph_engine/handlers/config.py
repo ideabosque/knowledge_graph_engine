@@ -7,7 +7,7 @@ import logging
 import sys
 import threading
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 
@@ -31,59 +31,102 @@ class Config:
     # KnowledgeGraphEngine instance (set by daemon entry point)
     kge: Any = None
 
+    # Backend selection: "dynamodb" (default) or "postgresql"
+    DB_BACKEND: str = "dynamodb"
+
+    # PostgreSQL session (only initialized when DB_BACKEND == "postgresql")
+    db_session = None
+
+    # PostgreSQL table name prefix (e.g. "kge_") — avoids collisions in
+    # shared databases.  Set from ``pg_table_prefix`` setting by
+    # ``_initialize_db_session``.  Empty string = no prefix (backward compat).
+    PG_TABLE_PREFIX: str = ""
+
     # Cache Configuration
     CACHE_TTL = 1800
     CACHE_ENABLED: bool = True
     CACHE_NAMES = {
-        "models": "knowledge_graph_engine.models",
+        "models": "knowledge_graph_engine.models.dynamodb",
         "queries": "knowledge_graph_engine.queries",
     }
 
-    CACHE_ENTITY_CONFIG = {
+    # ------------------------------------------------------------------
+    # Cache entity metadata (module paths, getters, cache key templates).
+    #
+    # Backend-aware: DynamoDB repositories use @method_cache stamped with
+    # the dynamodb module path. PostgreSQL repositories do not currently
+    # use @method_cache, so the PG config is empty.
+    # ------------------------------------------------------------------
+    CACHE_ENTITY_CONFIG_DYNAMODB = {
         "document": {
-            "module": "knowledge_graph_engine.models.document",
+            "module": "knowledge_graph_engine.models.dynamodb.document",
             "model_class": "DocumentModel",
             "getter": "get_document",
             "list_resolver": "knowledge_graph_engine.queries.document.resolve_document_list",
             "cache_keys": ["context:partition_key", "key:document_uuid"],
         },
         "graph_schema": {
-            "module": "knowledge_graph_engine.models.graph_schema",
+            "module": "knowledge_graph_engine.models.dynamodb.graph_schema",
             "model_class": "GraphSchemaModel",
             "getter": "get_graph_schema",
             "list_resolver": "knowledge_graph_engine.queries.graph_schema.resolve_graph_schema_list",
             "cache_keys": ["context:partition_key", "key:schema_name"],
         },
         "neo4j_instance": {
-            "module": "knowledge_graph_engine.models.neo4j_instance",
+            "module": "knowledge_graph_engine.models.dynamodb.neo4j_instance",
             "model_class": "Neo4jInstanceModel",
             "getter": "get_neo4j_instance",
-            "list_resolver": "knowledge_graph_engine.models.neo4j_instance.resolve_neo4j_instance_list",
+            "list_resolver": "knowledge_graph_engine.models.dynamodb.neo4j_instance.resolve_neo4j_instance_list",
             "cache_keys": ["context:partition_key", "key:instance_id"],
         },
         "request": {
-            "module": "knowledge_graph_engine.models.request",
+            "module": "knowledge_graph_engine.models.dynamodb.request",
             "model_class": "RequestModel",
             "getter": "get_request",
-            "list_resolver": "knowledge_graph_engine.models.request.resolve_request_list",
+            "list_resolver": "knowledge_graph_engine.models.dynamodb.request.resolve_request_list",
             "cache_keys": ["context:partition_key", "key:request_uuid"],
+        },
+        "document_process_error": {
+            "module": "knowledge_graph_engine.models.dynamodb.document_process_error",
+            "model_class": "DocumentProcessErrorModel",
+            "getter": "get_document_process_error",
+            "list_resolver": "",
+            "cache_keys": ["context:partition_key", "key:process_error_uuid"],
         },
     }
 
-    CACHE_RELATIONSHIPS = {
+    # PostgreSQL cache config — empty until PG repos opt into caching.
+    CACHE_ENTITY_CONFIG_POSTGRESQL: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def get_cache_entity_config(cls) -> Dict[str, Dict[str, Any]]:
+        """Return cache metadata for the active DB_BACKEND."""
+        if cls.DB_BACKEND == "postgresql":
+            return cls.CACHE_ENTITY_CONFIG_POSTGRESQL
+        return cls.CACHE_ENTITY_CONFIG_DYNAMODB
+
+    # ------------------------------------------------------------------
+    # Entity cache dependency relationships (cascading invalidation).
+    # ------------------------------------------------------------------
+    CACHE_RELATIONSHIPS_DYNAMODB = {
         "document": ["request"],
         "graph_schema": ["document"],
         "neo4j_instance": [],
     }
 
+    CACHE_RELATIONSHIPS_POSTGRESQL: Dict[str, List[Dict[str, Any]]] = {}
+
+    @classmethod
+    def get_cache_relationships(cls) -> Dict[str, Any]:
+        """Return cascade-invalidation relationships for the active backend."""
+        if cls.DB_BACKEND == "postgresql":
+            return cls.CACHE_RELATIONSHIPS_POSTGRESQL
+        return cls.CACHE_RELATIONSHIPS_DYNAMODB
+
     # AWS services (kept — used by core for Lambda invocation and DynamoDB)
     aws_lambda: Any = None
     aws_s3: Any = None
     aws_sqs: Any = None
-
-    @classmethod
-    def get_cache_entity_config(cls) -> Dict[str, Dict[str, Any]]:
-        return cls.CACHE_ENTITY_CONFIG
 
     @classmethod
     def initialize(cls, logger: logging.Logger, setting: Dict[str, Any]) -> None:
@@ -101,12 +144,29 @@ class Config:
 
                 cls._logger = logger
                 cls._setting = dict(setting)
+
+                # Read backend selection (deployment-time, not per request)
+                cls.DB_BACKEND = str(setting.get("db_backend", "dynamodb")).lower()
+                if cls.DB_BACKEND not in ("dynamodb", "postgresql"):
+                    raise ValueError(f"Unknown db_backend: {cls.DB_BACKEND}")
+
+                # KGE keeps AWS services unconditional for both backends
+                # (aws_lambda is used for dispatch, S3 for file parsing).
                 cls._initialize_aws_services(setting)
+
+                if cls.DB_BACKEND == "dynamodb":
+                    cls._initialize_dynamodb_meta(setting)
+                elif cls.DB_BACKEND == "postgresql":
+                    cls.PG_TABLE_PREFIX = str(setting.get("pg_table_prefix", "") or "")
+                    cls._initialize_db_session(setting)
 
                 if setting.get("initialize_tables"):
                     cls._initialize_tables(logger)
 
                 cls._initialized = True
+                logger.info(
+                    f"Configuration initialized successfully (db_backend={cls.DB_BACKEND})."
+                )
             except Exception as e:
                 sys.stderr.write(f"Config Initialize Error: {e}\n")
                 traceback.print_exc(file=sys.stderr)
@@ -126,6 +186,7 @@ class Config:
             cls.aws_lambda = None
             cls.aws_s3 = None
             cls.aws_sqs = None
+            cls.db_session = None
 
     @classmethod
     def _initialize_aws_services(cls, setting: Dict[str, Any]) -> None:
@@ -144,10 +205,72 @@ class Config:
         cls.aws_lambda = boto3.client("lambda", **aws_credentials)
 
     @classmethod
-    def _initialize_tables(cls, logger: logging.Logger) -> None:
-        from ..models.utils import initialize_tables
+    def _initialize_dynamodb_meta(cls, setting: Dict[str, Any]) -> None:
+        """Initialize PynamoDB BaseModel.Meta credentials from setting."""
+        from silvaengine_dynamodb_base import BaseModel
 
-        initialize_tables(logger)
+        if (
+            setting.get("region_name")
+            and setting.get("aws_access_key_id")
+            and setting.get("aws_secret_access_key")
+        ):
+            if hasattr(BaseModel.Meta, "region"):
+                BaseModel.Meta.region = setting.get("region_name")
+            if hasattr(BaseModel.Meta, "aws_access_key_id"):
+                BaseModel.Meta.aws_access_key_id = setting.get("aws_access_key_id")
+            if hasattr(BaseModel.Meta, "aws_secret_access_key"):
+                BaseModel.Meta.aws_secret_access_key = setting.get(
+                    "aws_secret_access_key"
+                )
+
+    @classmethod
+    def _initialize_db_session(cls, setting: Dict[str, Any]) -> None:
+        """Initialize the PostgreSQL database session using SQLAlchemy.
+
+        Expected setting keys: db_host, db_port, db_user, db_password, db_schema,
+        and optionally pg_table_prefix (e.g. "kge_") to avoid table name
+        collisions in shared databases.
+        """
+        from urllib.parse import quote_plus
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import scoped_session, sessionmaker
+
+        # Set the table prefix on Base BEFORE any model is imported so that
+        # declared_attr __tablename__ picks it up at class-definition time.
+        from ..models.postgresql.base import Base
+
+        Base.table_prefix = str(setting.get("pg_table_prefix", "") or "")
+        cls._logger.info(f"PostgreSQL table prefix set to '{Base.table_prefix}'.")
+
+        password = quote_plus(setting["db_password"])
+        connection_string = (
+            f"postgresql+psycopg2://{setting['db_user']}:{password}"
+            f"@{setting['db_host']}:{setting['db_port']}/{setting['db_schema']}"
+        )
+
+        engine = create_engine(
+            connection_string,
+            pool_recycle=7200,
+            pool_size=10,
+            pool_pre_ping=True,
+            echo=False,
+        )
+
+        cls.db_session = scoped_session(
+            sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        )
+
+    @classmethod
+    def _initialize_tables(cls, logger: logging.Logger) -> None:
+        if cls.DB_BACKEND == "dynamodb":
+            from ..models.dynamodb.utils import initialize_tables
+
+            initialize_tables(logger)
+        elif cls.DB_BACKEND == "postgresql":
+            from ..models.postgresql.utils import initialize_tables as pg_init
+
+            pg_init(logger, cls.db_session)
 
     @classmethod
     def get_cache_name(cls, module_type: str, model_name: str) -> str:
@@ -165,41 +288,39 @@ class Config:
         return cls.CACHE_ENABLED
 
     @classmethod
-    def get_cache_relationships(cls) -> Dict[str, list]:
-        return cls.CACHE_RELATIONSHIPS
-
-    @classmethod
     def get_setting(cls) -> Dict[str, Any]:
         if not cls._initialized:
             raise RuntimeError("Configuration not initialized")
-
         return cls._setting
 
     @classmethod
     def get_logger(cls) -> logging.Logger:
         if cls._logger:
             return cls._logger
-
         return logging.getLogger()
 
     @classmethod
     def get_graph_rag_util(cls, partition_key: str) -> Any:
         from .neo4j_connection_manager import Neo4jConnectionManager
         from ..utils.graph_rag_util import GraphRAGUtil
-        from ..models.neo4j_instance import get_active_neo4j_instance
+        from ..models.repositories import get_repo
 
         with cls._lock:
             cached = cls._graph_rag_utils.get(partition_key)
             if cached is not None:
                 return cached
 
-            # Both the driver and the database name come from the same active
-            # Neo4j instance record. Failing to find one means the partition is
-            # not registered — surface that loudly rather than silently routing
-            # to a default "neo4j" database that probably doesn't have the data.
             driver = Neo4jConnectionManager.get_driver(partition_key)
-            instance = get_active_neo4j_instance(partition_key)
-            database = instance.neo4j_database or "neo4j"
+
+            # Use the repository boundary to get the active Neo4j instance.
+            # resolve_active returns a normalized dict; extract neo4j_database.
+            repo = get_repo("neo4j_instance")
+            instance = repo.resolve_active(partition_key)
+            if instance is None:
+                raise RuntimeError(
+                    f"No active Neo4j instance for partition: {partition_key}"
+                )
+            database = instance.get("neo4j_database") or "neo4j"
 
             graph_rag = GraphRAGUtil(
                 driver=driver,

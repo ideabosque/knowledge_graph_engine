@@ -7,20 +7,19 @@ from typing import Any, Dict, Optional
 
 from graphene import ResolveInfo
 
-from ..models.graph_schema import (
-    resolve_graph_schema as _resolve_graph_schema,
-    resolve_graph_schema_list as _resolve_graph_schema_list,
-)
+from ..models.repositories import get_repo
 from ..types.graph_schema import GraphSchemaListType, GraphSchemaType
 
 
 def resolve_graph_schema(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> Optional[GraphSchemaType]:
-    return _resolve_graph_schema(info, **kwargs)
+    repo = get_repo("graph_schema")
+    return repo.resolve_single(info, **kwargs)
 
 
 def resolve_graph_schema_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> GraphSchemaListType:
-    return _resolve_graph_schema_list(info, **kwargs)
+    repo = get_repo("graph_schema")
+    return repo.list(info, **kwargs)

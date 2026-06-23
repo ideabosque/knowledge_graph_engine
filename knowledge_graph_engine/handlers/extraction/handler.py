@@ -73,7 +73,7 @@ class Extractor:
 
         from ..config import Config
         from ..schema_resolution.handler import SchemaResolver
-        from ...models.document import insert_update_document
+        from ...models.repositories import get_repo
 
         # Get tenant's GraphRAG utility
         graph_rag_util = Config.get_graph_rag_util(partition_key)
@@ -147,7 +147,8 @@ class Extractor:
             self.info.context.setdefault("part_id", part_id)
 
         try:
-            insert_update_document(
+            repo = get_repo("document")
+            repo.insert_update(
                 self.info,
                 partition_key=partition_key,
                 document_uuid=document_uuid,
@@ -237,14 +238,15 @@ class Extractor:
     ) -> None:
         """Persist extraction error to kge-document_process_errors for observability."""
         try:
-            from ...models.document_process_error import insert_update_document_process_error
+            from ...models.repositories import get_repo
 
-            insert_update_document_process_error(
+            repo = get_repo("document_process_error")
+            repo.insert_update(
                 self.info,
                 partition_key=partition_key,
                 document_source=document_source,
                 document_external_id=document_external_id,
-                error_message=error_message[:10000],  # Truncate for DynamoDB
+                error_message=error_message[:10000],  # Truncate for DB
                 process_status="failed",
             )
         except Exception:

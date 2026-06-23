@@ -30,24 +30,29 @@ class Neo4jConnectionManager:
             if partition_key not in cls._drivers:
                 instance = cls._load_instance(partition_key)
                 cls._drivers[partition_key] = GraphDatabase.driver(
-                    instance.neo4j_uri,
-                    auth=(instance.neo4j_username, instance.neo4j_password),
-                    max_connection_pool_size=instance.max_connection_pool_size,
+                    instance["neo4j_uri"],
+                    auth=(instance["neo4j_username"], instance["neo4j_password"]),
+                    max_connection_pool_size=instance.get("max_connection_pool_size", 5),
                 )
             return cls._drivers[partition_key]
 
     @classmethod
     def _load_instance(cls, partition_key: str) -> Any:
-        """Load the active Neo4j instance for a partition."""
-        from ..models.neo4j_instance import get_active_neo4j_instance, Neo4jInstanceModel
+        """Load the active Neo4j instance for a partition.
 
-        try:
-            return get_active_neo4j_instance(partition_key)
-        except Neo4jInstanceModel.DoesNotExist:
+        Uses the repository dispatch boundary so both DynamoDB and PostgreSQL
+        backends are supported.
+        """
+        from ..models.repositories import get_repo
+
+        repo = get_repo("neo4j_instance")
+        instance = repo.resolve_active(partition_key)
+        if instance is None:
             raise ValueError(
                 f"No active Neo4j instance for partition: {partition_key}. "
                 f"Register via insertUpdateNeo4jInstance mutation first."
             )
+        return instance
 
     @classmethod
     def close_driver(cls, partition_key: str) -> None:

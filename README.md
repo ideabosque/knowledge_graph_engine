@@ -62,6 +62,24 @@ These functions create a short-lived engine instance using the already-initializ
 
 `python -m knowledge_graph_engine` is kept as a deprecation stub and only emits a warning. New deployments should run `silvaengine_gateway`.
 
+## Dual-Backend Persistence
+
+KGE supports two selectable persistence backends for its five metadata entities
+(documents, graph schemas, Neo4j instances, requests, document process errors):
+
+- **`db_backend=dynamodb`** (default): PynamoDB models, `@method_cache` caching, DynamoDB table auto-creation.
+- **`db_backend=postgresql`**: SQLAlchemy models, Alembic migrations, partial unique indexes for the single-active invariant.
+
+**Neo4j is required under both backends** — it is the knowledge-graph store, not
+a swappable backend. See:
+- [DUAL_BACKEND_CONFIG.md](docs/DUAL_BACKEND_CONFIG.md) — architecture and configuration details
+- [POSTGRESQL_SETUP.md](docs/POSTGRESQL_SETUP.md) — PostgreSQL setup guide
+
+A repository dispatch boundary at `models/repositories/` isolates all GraphQL
+queries, mutations, and domain handlers from backend-specific persistence.
+A static adoption guard test ensures the GraphQL layer never imports
+`models.dynamodb` or `models.postgresql` directly.
+
 ## Capabilities
 
 - Extraction via `executeExtract` mutation or `dispatch_extract`
@@ -73,7 +91,7 @@ These functions create a short-lived engine instance using the already-initializ
 - RAG over tenant-scoped graph retrieval
 - Active-only schema pattern per partition
 - Active-only Neo4j instance pattern per partition
-- DynamoDB-backed models for:
+- Dual-backend metadata persistence (DynamoDB or PostgreSQL):
   - documents
   - graph schemas
   - Neo4j instances
@@ -88,16 +106,22 @@ knowledge_graph_engine/
     extraction/         Extraction workflow and telemetry wrapper
     schema_resolution/  Active-schema resolution and evolution
     search/             Search and RAG handler implementations
-    config.py           Shared runtime configuration
+    config.py           Shared runtime configuration (DB_BACKEND, db_session)
     neo4j_connection_manager.py
     partition_manager.py
-  models/               DynamoDB models
+  models/
+    dynamodb/           PynamoDB models (5 entities + cache + utils + batch_loaders)
+    postgresql/         SQLAlchemy models (5 entities + base + utils + batch_loaders)
+    repositories/       Dispatch boundary (base, dispatch, dynamodb/, postgresql/)
   mutations/            GraphQL mutation entrypoints
   queries/              GraphQL query resolvers
   schema.py             GraphQL schema definition
   types/                GraphQL object types
   utils/                GraphRAG helpers, parsing, normalization
   main.py               Engine class, deploy(), dispatch_graphql(), dispatch_extract()
+migration/
+  alembic.ini           Alembic configuration
+  alembic/              Migration environment (env.py, versions/)
 ```
 
 ## Configuration
@@ -135,11 +159,27 @@ settings = {
 Run the test suite with:
 
 ```bash
-pytest -q tests
+pytest -q knowledge_graph_engine/tests
+```
+
+Dual-backend tests (no external services needed):
+
+```bash
+# Repository adoption guard — GraphQL layer uses dispatch boundary
+pytest knowledge_graph_engine/tests/test_repository_adoption_guard.py -v
+
+# Backend-agnostic dispatch — all 5 entities resolve on both backends
+pytest knowledge_graph_engine/tests/test_backend_agnostic_dispatch.py -v
+
+# Loader dispatch — DynamoDB and PostgreSQL loaders
+pytest knowledge_graph_engine/tests/test_dual_backend_loaders.py -v
+
+# Business flow parity — contract surface, single-active, cache config
+pytest knowledge_graph_engine/tests/test_business_flow_parity.py -v
 ```
 
 For a quick smoke pass around the recent refactor:
 
 ```bash
-pytest tests/test_import.py tests/test_search.py tests/test_module_hardening.py -q
+pytest knowledge_graph_engine/tests/test_import.py knowledge_graph_engine/tests/test_module_hardening.py -q
 ```

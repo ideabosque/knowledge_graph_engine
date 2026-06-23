@@ -5,10 +5,9 @@ __author__ = "silvaengine"
 
 import traceback
 
-from graphene import Field, Int, Mutation, String
-from silvaengine_utility import JSONCamelCase
+from graphene import Int, Mutation, String
 
-from ..models.document import insert_update_document, delete_document, get_document
+from ..models.repositories import get_repo
 from ..types.document import DocumentType
 from ..handlers.config import Config
 
@@ -34,11 +33,12 @@ class InsertUpdateDocument(Mutation):
 
         if not partition_key:
             raise ValueError("partition_key is required in context")
-        
+
         try:
-            insert_update_document(info, **kwargs)
+            repo = get_repo("document")
+            repo.insert_update(info, **kwargs)
             document_uuid = kwargs.get("document_uuid")
-            return get_document(partition_key, document_uuid)
+            return repo.resolve_single(info, document_uuid=document_uuid)
         except Exception as e:
             logger.error(f"InsertUpdateDocument error: {traceback.format_exc()}")
             raise e
@@ -58,10 +58,12 @@ class DeleteDocument(Mutation):
 
         if not partition_key:
             raise ValueError("partition_key is required in context")
-        
+
         try:
-            document = get_document(partition_key, document_uuid)
-            delete_document(info, entity=document)
+            repo = get_repo("document")
+            data = repo.get(partition_key=partition_key, document_uuid=document_uuid)
+            if data:
+                repo.delete(info, partition_key=partition_key, document_uuid=document_uuid)
             return "deleted"
         except Exception as e:
             logger.error(f"DeleteDocument error: {traceback.format_exc()}")
