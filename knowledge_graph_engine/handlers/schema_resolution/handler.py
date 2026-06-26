@@ -8,6 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from graphene import ResolveInfo
+from neo4j_graphrag.experimental.components.schema import GraphSchema
 
 try:
     import nest_asyncio
@@ -71,9 +72,10 @@ class SchemaResolver:
     - New version is always a superset of the previous version
     """
 
-    def __init__(self, graph_rag_util, partition_key: str):
+    def __init__(self, graph_rag_util, partition_key: str, info: Any = None):
         self.graph_rag_util = graph_rag_util
         self.partition_key = partition_key
+        self.info = info
 
     def resolve(
         self,
@@ -90,7 +92,6 @@ class SchemaResolver:
           the text needs. If new types found, merge them ON TOP of the active
           schema (new version is always a superset). If no new types, reuse active.
         """
-        from neo4j_graphrag.experimental.components.schema import GraphSchema
 
         if isinstance(graph_schema, dict):
             if graph_schema.get("auto_extend"):
@@ -160,7 +161,8 @@ class SchemaResolver:
         except Exception as e:
             logger.warning(
                 "LLM schema discovery failed for partition %s: %s — reusing active schema.",
-                self.partition_key, e,
+                self.partition_key,
+                e,
             )
             return active
 
@@ -180,7 +182,9 @@ class SchemaResolver:
             "Schema evolved for partition %s: +%d node types, +%d relationship types, +%d patterns. "
             "New version saved as active (superset of previous).",
             self.partition_key,
-            len(new_nodes), len(new_rels), len(new_patterns),
+            len(new_nodes),
+            len(new_rels),
+            len(new_patterns),
         )
         return merged
 
@@ -205,7 +209,8 @@ class SchemaResolver:
             logger.warning(
                 "Could not read schema from graph for partition %s: %s. "
                 "Falling back to LLM-based schema discovery.",
-                self.partition_key, e,
+                self.partition_key,
+                e,
             )
 
         # Fallback: use LLM to discover schema from the extracted text
@@ -215,7 +220,8 @@ class SchemaResolver:
             except Exception as e:
                 logger.warning(
                     "LLM schema discovery also failed for partition %s: %s",
-                    self.partition_key, e,
+                    self.partition_key,
+                    e,
                 )
 
         if not graph_schema:
@@ -270,13 +276,16 @@ class SchemaResolver:
         except Exception as e:
             logger.warning(
                 "Failed to load active schema for partition %s: %s",
-                self.partition_key, e,
+                self.partition_key,
+                e,
             )
         return None
 
     def _extract_from_existing_graph(self) -> "GraphSchema":
         """Use SchemaFromExistingGraphExtractor to read schema from tenant's Neo4j."""
-        from neo4j_graphrag.experimental.components.schema import SchemaFromExistingGraphExtractor
+        from neo4j_graphrag.experimental.components.schema import (
+            SchemaFromExistingGraphExtractor,
+        )
 
         extractor = SchemaFromExistingGraphExtractor(
             driver=self.graph_rag_util.driver,
@@ -286,7 +295,9 @@ class SchemaResolver:
 
     def _discover_schema(self, text: str) -> "GraphSchema":
         """Use LLM to discover entity types from text."""
-        from neo4j_graphrag.experimental.components.schema import SchemaFromTextExtractor
+        from neo4j_graphrag.experimental.components.schema import (
+            SchemaFromTextExtractor,
+        )
 
         extractor = SchemaFromTextExtractor(llm=self.graph_rag_util.llm)
         return _run_async(extractor.run(text=text))
@@ -381,7 +392,11 @@ class SchemaResolver:
                     NodeType(
                         label=nt["label"],
                         description=nt.get("description", ""),
-                        properties=props if props else [PropertyType(name="name", type="STRING")],
+                        properties=(
+                            props
+                            if props
+                            else [PropertyType(name="name", type="STRING")]
+                        ),
                     )
                 )
 
@@ -505,7 +520,11 @@ class SchemaResolver:
                 if isinstance(nt, str):
                     lines.append(f"(:{nt})")
                 else:
-                    props = ", ".join(p.name for p in nt.properties) if nt.properties else ""
+                    props = (
+                        ", ".join(p.name for p in nt.properties)
+                        if nt.properties
+                        else ""
+                    )
                     lines.append(f"(:{nt.label} {{{props}}})")
         if schema.patterns:
             for p in schema.patterns:
@@ -528,7 +547,7 @@ def _resolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
         raise ValueError("partition_key is required")
 
     graph_rag_util = Config.get_graph_rag_util(partition_key)
-    resolver = SchemaResolver(graph_rag_util, partition_key)
+    resolver = SchemaResolver(graph_rag_util, partition_key, info)
     result = resolver.resolve(
         text=kwargs.get("text", ""),
         graph_schema=kwargs.get("graph_schema"),
@@ -542,7 +561,9 @@ def _resolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
 
 def dispatch_resolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
     """Public dispatch — wraps _resolve_schema with telemetry."""
-    with measure_handler_duration(info, operation="resolve_schema", handler="schema_resolution"):
+    with measure_handler_duration(
+        info, operation="resolve_schema", handler="schema_resolution"
+    ):
         return _resolve_schema(info, **kwargs)
 
 
@@ -555,7 +576,7 @@ def _evolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
         raise ValueError("partition_key is required")
 
     graph_rag_util = Config.get_graph_rag_util(partition_key)
-    resolver = SchemaResolver(graph_rag_util, partition_key)
+    resolver = SchemaResolver(graph_rag_util, partition_key, info)
     resolver.evolve_schema_from_graph(text=kwargs.get("text"))
 
     return {"status": "success", "partition_key": partition_key}
@@ -563,5 +584,7 @@ def _evolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
 
 def dispatch_evolve_schema(info: ResolveInfo, **kwargs: Any) -> Dict[str, Any]:
     """Public dispatch — wraps _evolve_schema with telemetry."""
-    with measure_handler_duration(info, operation="evolve_schema", handler="schema_resolution"):
+    with measure_handler_duration(
+        info, operation="evolve_schema", handler="schema_resolution"
+    ):
         return _evolve_schema(info, **kwargs)

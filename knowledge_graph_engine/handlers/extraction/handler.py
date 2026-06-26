@@ -79,7 +79,7 @@ class Extractor:
         graph_rag_util = Config.get_graph_rag_util(partition_key)
 
         # Resolve schema (active schema, user-provided, or fallback)
-        schema_resolver = SchemaResolver(graph_rag_util, partition_key)
+        schema_resolver = SchemaResolver(graph_rag_util, partition_key, self.info)
         resolved_schema = schema_resolver.resolve(
             text=text,
             graph_schema=graph_schema,
