@@ -40,7 +40,7 @@ class Config:
     # PostgreSQL table name prefix (e.g. "kge_") — avoids collisions in
     # shared databases.  Set from ``pg_table_prefix`` setting by
     # ``_initialize_db_session``.  Empty string = no prefix (backward compat).
-    PG_TABLE_PREFIX: str = ""
+    PG_TABLE_PREFIX: str = "kge_"
 
     # Cache Configuration
     CACHE_TTL = 1800
@@ -157,7 +157,9 @@ class Config:
                 if cls.DB_BACKEND == "dynamodb":
                     cls._initialize_dynamodb_meta(setting)
                 elif cls.DB_BACKEND == "postgresql":
-                    cls.PG_TABLE_PREFIX = str(setting.get("pg_table_prefix", "") or "")
+                    cls.PG_TABLE_PREFIX = str(
+                        setting.get("pg_table_prefix", "kge_")
+                    ).strip()
                     cls._initialize_db_session(setting)
 
                 if setting.get("initialize_tables"):
