@@ -5,7 +5,7 @@ __author__ = "silvaengine"
 
 import traceback
 
-from graphene import Mutation, String
+from graphene import Boolean, Mutation, String
 from silvaengine_utility import JSONCamelCase
 
 from ..types.search import ExtractResultType
@@ -17,6 +17,10 @@ class ExecuteExtract(Mutation):
         graph_schema = JSONCamelCase()
         document_source = String()
         document_external_id = String()
+        # Opt-in: merge same-name entities after extraction (cleaner graph,
+        # ~2x slower). When omitted, the handler falls back to the
+        # KGE_ENTITY_RESOLUTION env default (off).
+        perform_entity_resolution = Boolean()
 
     Output = ExtractResultType
 
@@ -45,6 +49,7 @@ class ExecuteExtract(Mutation):
                 graph_schema=graph_schema,
                 document_source=kwargs.get("document_source"),
                 document_external_id=kwargs.get("document_external_id"),
+                perform_entity_resolution=kwargs.get("perform_entity_resolution"),
             )
             return ExtractResultType(**result)
         except Exception as e:

@@ -59,11 +59,20 @@ class Extractor:
         This ensures the schema definition always evolves to cover all extracted data,
         and each new version is a superset of the previous version.
         """
+        import os
+
         partition_key = params.get("partition_key")
         text = params.get("text", "")
         graph_schema = params.get("graph_schema")
         document_source = params.get("document_source", "unknown")
         document_external_id = params.get("document_external_id")
+
+        # Entity resolution is opt-in (merges same-name nodes; cleaner graph but
+        # ~2x slower). Explicit call argument wins; otherwise fall back to the
+        # KGE_ENTITY_RESOLUTION env var. Default off (original engine behavior).
+        perform_entity_resolution = params.get("perform_entity_resolution")
+        if perform_entity_resolution is None:
+            perform_entity_resolution = os.getenv("KGE_ENTITY_RESOLUTION", "0") == "1"
 
         if not partition_key:
             raise ValueError("partition_key is required")
@@ -90,6 +99,7 @@ class Extractor:
             extraction_result = graph_rag_util.build_knowledge_graph(
                 text=text,
                 schema=resolved_schema,
+                perform_entity_resolution=perform_entity_resolution,
             )
         except Exception as e:
             if self.logger:
