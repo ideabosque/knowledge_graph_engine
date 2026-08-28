@@ -37,6 +37,15 @@ test = [
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+# The repo root also has top-level `migration/`, `docs/` and `build/`
+# directories, which setuptools' flat-layout auto-discovery can't
+# disambiguate from the real package without this. Without it, `pip install
+# git+https://...` (a fresh clone, no pre-built wheel) fails: "Multiple
+# top-level packages discovered in a flat-layout: ['migration',
+# 'knowledge_graph_engine']" (or similar, depending on which dirs are present).
+include = ["knowledge_graph_engine*"]
+
 [tool.pytest.ini_options]
 testpaths = ["knowledge_graph_engine/tests"]
 python_files = "test_*.py"
