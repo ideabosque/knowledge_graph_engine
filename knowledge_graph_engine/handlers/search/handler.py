@@ -345,17 +345,23 @@ class RAGHandler:
         """Create retriever matching the search mode. All use neo4j_database."""
         from neo4j_graphrag.retrievers import VectorRetriever, HybridRetriever
 
+        # Tolerates graphs whose vector index wasn't created via
+        # GraphRAGUtil.create_vector_index()/bootstrap_indexes_if_missing()
+        # (which always name it `index_name`) — see
+        # GraphRAGUtil.resolve_vector_index_name() for why this matters.
+        resolved_index_name = graph_rag.resolve_vector_index_name(index_name)
+
         if search_mode == "vector":
             return VectorRetriever(
                 driver=graph_rag.driver,
-                index_name=index_name,
+                index_name=resolved_index_name,
                 embedder=graph_rag.embedder,
                 neo4j_database=graph_rag.neo4j_database,
             )
         elif search_mode == "hybrid":
             return HybridRetriever(
                 driver=graph_rag.driver,
-                vector_index_name=index_name,
+                vector_index_name=resolved_index_name,
                 fulltext_index_name="fulltext",
                 embedder=graph_rag.embedder,
                 neo4j_database=graph_rag.neo4j_database,
@@ -363,7 +369,7 @@ class RAGHandler:
         else:
             return VectorRetriever(
                 driver=graph_rag.driver,
-                index_name=index_name,
+                index_name=resolved_index_name,
                 embedder=graph_rag.embedder,
                 neo4j_database=graph_rag.neo4j_database,
             )

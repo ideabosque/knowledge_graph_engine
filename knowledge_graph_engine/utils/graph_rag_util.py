@@ -286,7 +286,7 @@ class GraphRAGUtil:
         """Semantic similarity search on embeddings."""
         retriever = VectorRetriever(
             driver=self.driver,
-            index_name=index_name,
+            index_name=self.resolve_vector_index_name(index_name),
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
             result_formatter=self.default_record_formatter if is_result_formatter else None
@@ -335,7 +335,7 @@ class GraphRAGUtil:
         """Vector search + custom Cypher traversal."""
         retriever = VectorCypherRetriever(
             driver=self.driver,
-            index_name=index_name,
+            index_name=self.resolve_vector_index_name(index_name),
             retrieval_query=retrieval_query,
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
@@ -354,7 +354,7 @@ class GraphRAGUtil:
         """Combined vector + fulltext search."""
         retriever = HybridRetriever(
             driver=self.driver,
-            vector_index_name=vector_index_name,
+            vector_index_name=self.resolve_vector_index_name(vector_index_name),
             fulltext_index_name=fulltext_index_name,
             embedder=self.embedder,
             neo4j_database=self.neo4j_database,
@@ -422,6 +422,52 @@ class GraphRAGUtil:
                 "Index existence check failed for %r: %s", index_name, exc
             )
             return False
+
+    def resolve_vector_index_name(
+        self, requested_name: str = "vector", label: str = "Chunk"
+    ) -> str:
+        """Resolve the actual vector index name for `label`, tolerating graphs
+        whose index wasn't created via create_vector_index()/
+        bootstrap_indexes_if_missing() (which always name it `requested_name`).
+
+        A graph built by an external pipeline (e.g. a raw
+        neo4j_graphrag.experimental SimpleKGPipeline run, or one migrated from
+        another Neo4j instance via APOC export/import) may have its vector
+        index under a Neo4j-auto-generated name like "index_d04368c7" instead.
+        Search/RAG would otherwise fail outright with "No index with name
+        <requested_name> found" despite the data and a working vector index
+        both being present.
+
+        Fast path: if `requested_name` already exists, return it unchanged —
+        this is the common case for indexes KGE created itself, and costs one
+        cheap existence check. Only falls back to a SHOW INDEXES lookup by
+        (type=VECTOR, label) when that fails.
+        """
+        if self.index_exists(requested_name):
+            return requested_name
+        try:
+            records, _, _ = self.driver.execute_query(
+                "SHOW INDEXES YIELD name, type, labelsOrTypes "
+                "WHERE type = 'VECTOR' AND $label IN labelsOrTypes "
+                "RETURN name ORDER BY name LIMIT 1",
+                label=label,
+                database_=self.neo4j_database,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Vector index auto-discovery failed for label %r: %s", label, exc
+            )
+            return requested_name
+        if records:
+            discovered = records[0]["name"]
+            logger.info(
+                "Vector index %r not found; using discovered index %r for label %r",
+                requested_name,
+                discovered,
+                label,
+            )
+            return discovered
+        return requested_name
 
     def bootstrap_indexes_if_missing(
         self,
